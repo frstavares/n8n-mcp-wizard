@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { resolveProvider, type CliName } from '../src/lib/demo/resolver.js';
+import { resolveProvider } from '../src/lib/demo/resolver.js';
 import { runDemo, type DemoEvent } from '../src/lib/demo/run.js';
 import type { McpTool } from '../src/lib/mcp-client.js';
 
 /** Build a fake commandExists that reports the given commands as installed. */
-function installed(...present: CliName[]): (cmd: string) => Promise<boolean> {
+function installed(...present: string[]): (cmd: string) => Promise<boolean> {
   const set = new Set<string>(present);
   return async (cmd) => set.has(cmd);
 }
@@ -15,27 +15,17 @@ function listToolsReturning(tools: McpTool[]) {
 }
 
 describe('resolveProvider', () => {
-  it('prefers claude when all CLIs are installed', async () => {
-    const p = await resolveProvider('tok', installed('claude', 'codex', 'gemini'));
-    expect(p).toEqual({ kind: 'cli', name: 'claude' });
+  it('uses the Agent SDK when Claude Code is installed', async () => {
+    const p = await resolveProvider('tok', installed('claude'));
+    expect(p).toEqual({ kind: 'agent-sdk' });
   });
 
-  it('falls back to codex when claude is missing', async () => {
-    const p = await resolveProvider('tok', installed('codex', 'gemini'));
-    expect(p).toEqual({ kind: 'cli', name: 'codex' });
-  });
-
-  it('falls back to gemini when only gemini is installed', async () => {
-    const p = await resolveProvider('tok', installed('gemini'));
-    expect(p).toEqual({ kind: 'cli', name: 'gemini' });
-  });
-
-  it('uses the deterministic demo when no CLI but a token is present', async () => {
+  it('uses the deterministic demo when Claude Code is missing but a token is present', async () => {
     const p = await resolveProvider('tok', installed());
     expect(p).toEqual({ kind: 'deterministic' });
   });
 
-  it('returns none when no CLI and no token', async () => {
+  it('returns none when no Claude Code and no token', async () => {
     const p = await resolveProvider(undefined, installed());
     expect(p).toEqual({ kind: 'none' });
   });

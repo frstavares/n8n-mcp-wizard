@@ -8,7 +8,7 @@
  *   SAMPLE_PROMPTS           → build-first prompts for an empty n8n instance
  */
 export { resolveProvider } from './resolver.js';
-export type { DemoProvider, CliName } from './resolver.js';
+export type { DemoProvider } from './resolver.js';
 
 export { runDemo } from './run.js';
 export type { DemoEvent, RunDemoOptions } from './run.js';

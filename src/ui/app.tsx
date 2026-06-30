@@ -25,7 +25,6 @@ const PURPLE = '#C3A6FF';
 
 // Reserved body height so short steps don't collapse the layout.
 const BODY_MIN_HEIGHT = 10;
-const CLI_LABELS = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini' } as const;
 
 interface SelOption {
   label: string;
@@ -324,7 +323,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
           return checked.url;
         }
       })();
-      const agent = provider.kind === 'cli' ? CLI_LABELS[provider.name] : 'n8n MCP (direct)';
+      const agent = provider.kind === 'agent-sdk' ? 'Claude Code' : 'n8n MCP (direct)';
       setEvents([{ type: 'header', agent, host }]);
     }
     (async () => {
@@ -341,8 +340,8 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
         if (!off) setEvents((prev) => [...prev, { type: 'error', message: 'That turn could not run, but your tools are configured.' }]);
       } finally {
         if (off) return;
-        // Conversational only for an installed agent CLI; otherwise wrap up.
-        if (provider.kind === 'cli') setStage('demoFollowup');
+        // Conversational only when we're driving the agent; otherwise wrap up.
+        if (provider.kind === 'agent-sdk') setStage('demoFollowup');
         else setTimeout(() => !off && setStage('done'), 1200);
       }
     })();

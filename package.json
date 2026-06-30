@@ -32,6 +32,7 @@
   "author": "frstavares",
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.196",
     "@inkjs/ui": "^2.0.0",
     "cli-markdown": "^3.4.0",
     "commander": "^12.1.0",

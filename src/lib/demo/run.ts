@@ -1,18 +1,15 @@
 /**
- * Runs the resolved "first message" demo and streams structured events back to
- * the caller via `onEvent` (live, as they happen).
+ * Runs the "first message" demo and streams structured events back via `onEvent`.
  *
- *  - cli           spawn the user's own agent CLI in non-interactive mode and
- *                  stream tool-calls live; emit one final markdown `result`.
- *  - deterministic no LLM — just prove the MCP connection by listing tools.
- *  - none          nothing installed and no token; tell the user what to do.
- *
- * The CLI is already configured with the n8n MCP server (the wizard just did
- * that), and we allow-list the n8n MCP tools so headless mode can call them.
+ *  - agent-sdk      drive the user's Claude Code via @anthropic-ai/claude-agent-sdk
+ *                   (their existing login — no API key), with the n8n MCP passed in
+ *                   directly. Structured streaming: thinking, text, tool calls.
+ *  - deterministic  no LLM — prove the MCP connection by listing tools.
+ *  - none           nothing usable; tell the user what to do.
  */
-import { execa, type ExecaError } from 'execa';
+import { mcpServerUrl } from '../instance.js';
 import { listTools, type McpTool } from '../mcp-client.js';
-import type { CliName, DemoProvider } from './resolver.js';
+import type { DemoProvider } from './resolver.js';
 
 export type DemoEvent =
   | { type: 'header'; agent: string; host: string } // chat header (seeded by the UI)
@@ -38,13 +35,10 @@ export interface RunDemoOptions {
   continueSession?: boolean;
 }
 
-const CLI_TIMEOUT_MS = 180_000;
-const CLI_LABEL: Record<CliName, string> = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini' };
-
 export async function runDemo(opts: RunDemoOptions): Promise<void> {
   switch (opts.provider.kind) {
-    case 'cli':
-      return runCliDemo(opts.provider.name, opts);
+    case 'agent-sdk':
+      return runAgentSdkDemo(opts);
     case 'deterministic':
       return runDeterministicDemo(opts);
     case 'none':
@@ -52,94 +46,54 @@ export async function runDemo(opts: RunDemoOptions): Promise<void> {
   }
 }
 
-/** argv for each CLI's non-interactive mode. Allow-list n8n MCP tools so the
- *  headless permission gate doesn't refuse them. */
-function cliArgs(name: CliName, prompt: string, cont: boolean): string[] {
-  switch (name) {
-    case 'claude':
-      return ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--allowedTools', 'mcp__n8n', ...(cont ? ['--continue'] : [])];
-    case 'codex':
-      return ['exec', '--full-auto', prompt];
-    case 'gemini':
-      return ['-p', prompt, '--yolo'];
-  }
-}
-
-async function runCliDemo(name: CliName, opts: RunDemoOptions): Promise<void> {
-  const { prompt, onEvent } = opts;
-  onEvent({ type: 'prompt', text: prompt });
-  let stderrBuf = '';
-  try {
-    const subprocess = execa(name, cliArgs(name, prompt, !!opts.continueSession), { timeout: CLI_TIMEOUT_MS, buffer: false, reject: true });
-    if (subprocess.stderr) {
-      subprocess.stderr.setEncoding('utf8');
-      (async () => {
-        for await (const c of subprocess.stderr!) stderrBuf += String(c);
-      })().catch(() => {});
-    }
-    const parser = name === 'claude' ? makeClaudeStreamParser(onEvent) : makePlainTextParser(onEvent);
-    if (subprocess.stdout) {
-      subprocess.stdout.setEncoding('utf8');
-      for await (const chunk of subprocess.stdout) parser.push(String(chunk));
-    }
-    await subprocess;
-    parser.flush();
-  } catch (e) {
-    // Surface a short diagnostic so we can see *why* it fell back (timeout, not
-    // logged in, bad flag, …), then fall back cleanly.
-    const why = (stderrBuf.trim().split('\n').pop() || errorMessage(e)).slice(0, 160);
-    onEvent({ type: 'thinking', text: `${CLI_LABEL[name]} couldn't complete the live run (${why}).` });
-    if (opts.token) {
-      onEvent({ type: 'thinking', text: 'Verifying your connection instead…' });
-      await runDeterministicDemo(opts);
-    } else {
-      onEvent({ type: 'result', text: `Setup complete. Open ${CLI_LABEL[name]} and paste a sample prompt to try your n8n MCP server.` });
-    }
-  }
-}
-
 /**
- * Parser for `claude -p --output-format stream-json --verbose` (newline-delimited
- * JSON). Tool calls stream live; assistant prose is accumulated and surfaced once
- * as a final `result` so markdown renders coherently rather than per-delta.
+ * Drive Claude Code through the Agent SDK. Uses the user's existing Claude Code
+ * login (no key). We hand it the n8n MCP server + allow-list its tools, so the
+ * headless permission gate can't block the call and it works mid-setup.
  */
-function makeClaudeStreamParser(onEvent: (e: DemoEvent) => void) {
-  let buffer = '';
+async function runAgentSdkDemo(opts: RunDemoOptions): Promise<void> {
+  const { instanceBaseUrl, token, prompt, onEvent } = opts;
+  onEvent({ type: 'prompt', text: prompt });
   const openTools: string[] = [];
-  let assistantText = '';
-  let streamed = false; // did we emit live narration? then don't re-emit a final result
-  // Held back until the process succeeds, so a failed run (e.g. "not logged in"
-  // emitted as a result) never leaks before we fall back.
-  let pendingResult = '';
+  let streamed = false;
+  try {
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+    const response = query({
+      prompt,
+      options: {
+        mcpServers: {
+          n8n: {
+            type: 'http',
+            url: mcpServerUrl(instanceBaseUrl),
+            ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+            alwaysLoad: true,
+          },
+        },
+        // Allow every n8n MCP tool (and nothing on the local machine) without prompts.
+        allowedTools: ['mcp__n8n'],
+        ...(opts.continueSession ? { continue: true } : {}),
+      },
+    });
 
-  function handleObject(obj: any): void {
-    if (!obj || typeof obj !== 'object') return;
-    switch (obj.type) {
-      case 'assistant': {
-        const content = obj.message?.content;
+    for await (const msg of response as AsyncIterable<any>) {
+      if (msg?.type === 'assistant') {
+        const content = msg.message?.content;
         if (Array.isArray(content)) {
           for (const item of content) {
-            if (item?.type === 'thinking' && typeof item.thinking === 'string') {
-              if (item.thinking.trim()) {
-                onEvent({ type: 'thinking', text: item.thinking.trim() }); // dim reasoning
-                streamed = true;
-              }
-            } else if (item?.type === 'text' && typeof item.text === 'string') {
-              assistantText += item.text;
-              if (item.text.trim()) {
-                onEvent({ type: 'text', text: item.text.trim() }); // the answer (bright)
-                streamed = true;
-              }
+            if (item?.type === 'thinking' && typeof item.thinking === 'string' && item.thinking.trim()) {
+              onEvent({ type: 'thinking', text: item.thinking.trim() });
+              streamed = true;
+            } else if (item?.type === 'text' && typeof item.text === 'string' && item.text.trim()) {
+              onEvent({ type: 'text', text: item.text.trim() });
+              streamed = true;
             } else if (item?.type === 'tool_use' && typeof item.name === 'string') {
               openTools.push(item.name);
               onEvent({ type: 'tool', name: prettyToolName(item.name) });
             }
           }
         }
-        break;
-      }
-      case 'user': {
-        const content = obj.message?.content;
+      } else if (msg?.type === 'user') {
+        const content = msg.message?.content;
         if (Array.isArray(content)) {
           for (const item of content) {
             if (item?.type === 'tool_result') {
@@ -148,80 +102,21 @@ function makeClaudeStreamParser(onEvent: (e: DemoEvent) => void) {
             }
           }
         }
-        break;
-      }
-      case 'result': {
-        const text = typeof obj.result === 'string' && obj.result.trim() ? obj.result : assistantText;
-        if (text.trim()) pendingResult = text.trim();
-        break;
+      } else if (msg?.type === 'result') {
+        if (!streamed && msg.subtype === 'success' && typeof msg.result === 'string' && msg.result.trim()) {
+          onEvent({ type: 'result', text: msg.result.trim() });
+        }
       }
     }
-  }
-
-  function consumeLine(line: string): void {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    try {
-      handleObject(JSON.parse(trimmed));
-    } catch {
-      /* ignore non-JSON noise */
+  } catch (e) {
+    onEvent({ type: 'thinking', text: `Claude Code couldn't run the live build (${errorMessage(e)}).` });
+    if (token) {
+      onEvent({ type: 'thinking', text: 'Verifying your connection instead…' });
+      await runDeterministicDemo(opts);
+    } else {
+      onEvent({ type: 'result', text: 'Setup complete — open Claude Code and ask it about your n8n.' });
     }
   }
-
-  return {
-    push(chunk: string): void {
-      buffer += chunk;
-      let nl: number;
-      while ((nl = buffer.indexOf('\n')) !== -1) {
-        consumeLine(buffer.slice(0, nl));
-        buffer = buffer.slice(nl + 1);
-      }
-    },
-    flush(): void {
-      if (buffer) {
-        consumeLine(buffer);
-        buffer = '';
-      }
-      if (!streamed) {
-        const out = pendingResult || assistantText.trim();
-        if (out) onEvent({ type: 'result', text: out });
-      }
-    },
-  };
-}
-
-/** Plain-text parser (codex, gemini): stream tool-ish lines live, emit prose once. */
-function makePlainTextParser(onEvent: (e: DemoEvent) => void) {
-  let buffer = '';
-  let text = '';
-  const TOOL_LINE = /(?:calling tool|tool call|tool[_ ]use|using tool|\btool\b\s*[:=])\s*([A-Za-z0-9._-]+)/i;
-
-  function consumeLine(line: string): void {
-    const m = line.match(TOOL_LINE);
-    if (m && m[1]) {
-      onEvent({ type: 'tool', name: prettyToolName(m[1]) });
-      onEvent({ type: 'tool-done', name: prettyToolName(m[1]) });
-    }
-    if (line.trim()) text += line + '\n';
-  }
-
-  return {
-    push(chunk: string): void {
-      buffer += chunk;
-      let nl: number;
-      while ((nl = buffer.indexOf('\n')) !== -1) {
-        consumeLine(buffer.slice(0, nl));
-        buffer = buffer.slice(nl + 1);
-      }
-    },
-    flush(): void {
-      if (buffer) {
-        consumeLine(buffer);
-        buffer = '';
-      }
-      if (text.trim()) onEvent({ type: 'result', text: text.trim() });
-    },
-  };
 }
 
 /** `mcp__n8n__search_workflows` → `search_workflows`. */
@@ -235,7 +130,7 @@ const DETERMINISTIC_PROMPT = 'What can you do with my n8n instance?';
 async function runDeterministicDemo(opts: RunDemoOptions): Promise<void> {
   const { instanceBaseUrl, token, onEvent, fetchImpl } = opts;
   if (!token) {
-    onEvent({ type: 'error', message: 'No token available for the deterministic demo.' });
+    onEvent({ type: 'error', message: 'No token available for the connection check.' });
     return;
   }
   onEvent({ type: 'prompt', text: DETERMINISTIC_PROMPT });
@@ -280,9 +175,5 @@ async function runNoneDemo(opts: RunDemoOptions): Promise<void> {
 }
 
 function errorMessage(e: unknown): string {
-  const err = e as Partial<ExecaError> & { message?: string };
-  if (err?.timedOut) return 'timed out';
-  if (typeof err?.shortMessage === 'string') return err.shortMessage;
-  if (typeof err?.message === 'string') return err.message;
-  return String(e);
+  return e instanceof Error ? e.message : String(e);
 }
