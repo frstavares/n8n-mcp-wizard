@@ -1,0 +1,36 @@
+src/lib/demo/run.ts
+  s_10154009c3b2f1::t_e6f1edccfe2c65 76-77,83-95,97-98,111,117
+  s_10154009c3b2f1::t_5453b35f486aef 21-22
+src/lib/clients/index.ts
+  s_10154009c3b2f1::t_0e04486b3d97e5 28-30
+src/ui/app.tsx
+  s_10154009c3b2f1::t_626af52c4e61c6 19
+  s_10154009c3b2f1::t_bc4028efbaf596 739
+  s_10154009c3b2f1::t_da2bf428b41d25 168-170
+  s_10154009c3b2f1::t_ee222d8bd2d10a 437-439
+  s_10154009c3b2f1::t_1889f133a4c396 1
+  s_10154009c3b2f1::t_f826bd9749c2c7 649-653
+  s_10154009c3b2f1::t_a7034e6abe2f9e 410
+  s_10154009c3b2f1::t_c3e508a42fa051 332-359,368
+src/cli.tsx
+  s_10154009c3b2f1::t_84f326a11f9e63 163
+src/lib/clients/claude-web.ts
+  s_10154009c3b2f1::t_eda3f58fd52fe2 2
+  s_10154009c3b2f1::t_163be33bcf5b8d 1,6-10,12-15,23,27-35,49,55-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3ad115745deb2d9e906eb87b844c619650c3ba6e",
+  "prompts": {},
+  "sessions": {
+    "s_10154009c3b2f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ce5eadc-732a-41fc-9d55-99174270bdb0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "frstavares <filipe.tavares@n8n.io>"
+    }
+  }
+}
