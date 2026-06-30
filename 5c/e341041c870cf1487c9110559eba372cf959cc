@@ -1,0 +1,53 @@
+src/lib/clients/vscode.ts
+  s_10154009c3b2f1::t_39cc175b13e671 4
+  s_10154009c3b2f1::t_f3975f3b71e2f6 45-54
+src/lib/clients/jsonc-file.ts
+  s_10154009c3b2f1::t_e9d76f2f758063 54-65
+src/lib/clients/claude-desktop.ts
+  s_10154009c3b2f1::t_2e03ce7638aa24 4
+  s_10154009c3b2f1::t_52e8126a32da12 57-66
+src/lib/clients/index.ts
+  s_10154009c3b2f1::t_b0ea9969a32f58 79-91
+src/cli.tsx
+  s_10154009c3b2f1::t_6cf98e5d297a3f 99-102
+  s_10154009c3b2f1::t_51a9d21e635dfe 72,76-77
+  s_10154009c3b2f1::t_8cc46ff9074262 68,73-75,78-95
+  s_10154009c3b2f1::t_ce146ec159dc3d 12
+  s_10154009c3b2f1::t_d68de9082f33dd 64
+src/lib/clients/cursor.ts
+  s_10154009c3b2f1::t_bc174bc5db50ce 4
+  s_10154009c3b2f1::t_05ed79d4603ff6 45-54
+README.md
+  s_10154009c3b2f1::t_1dd4c6a6069dc5 42-48
+  s_10154009c3b2f1::t_956bf6bc8bbdec 30
+  s_10154009c3b2f1::t_def797e9209864 17
+src/lib/clients/zed.ts
+  s_10154009c3b2f1::t_646ceecb5e9e6a 45-54
+  s_10154009c3b2f1::t_3bc7ede0dd4cbd 4
+src/lib/clients/types.ts
+  s_10154009c3b2f1::t_e45a2fb27f3e60 32-33
+src/lib/clients/codex.ts
+  s_10154009c3b2f1::t_a99cc3be7df8dd 41-53
+LICENSE
+  s_10154009c3b2f1::t_8dc4f8954777c6 1-21
+src/lib/clients/claude-code.ts
+  s_10154009c3b2f1::t_5988ef8ed2d3e3 43-55
+package.json
+  s_10154009c3b2f1::t_5b04b35b055479 34-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5ce341041c870cf1487c9110559eba372cf959cc",
+  "prompts": {},
+  "sessions": {
+    "s_10154009c3b2f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ce5eadc-732a-41fc-9d55-99174270bdb0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "frstavares <filipe.tavares@n8n.io>"
+    }
+  }
+}
