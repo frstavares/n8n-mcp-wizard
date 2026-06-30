@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Box, Text, render, useApp, useInput } from 'ink';
+import { Box, Static, Text, render, useApp, useInput } from 'ink';
 import { Spinner, MultiSelect, TextInput } from '@inkjs/ui';
 import { toWizardError, type WizardError } from '../lib/errors.js';
 import { checkInstance, ensureValidKey, type CheckedInstance } from '../lib/flow.js';
@@ -67,74 +67,6 @@ export function SelectList({ options, onSelect }: { options: SelOption[]; onSele
   );
 }
 
-interface TypeLine {
-  text: string;
-  color?: string;
-  dim?: boolean;
-}
-
-/**
- * Types out a block of lines like a person at a keyboard: each line reveals
- * character-by-character, then the next begins. Any keypress skips to the full
- * text. Fires onDone exactly once when everything is shown.
- */
-export function TypewriterLines({
-  lines,
-  speed = 12,
-  linePause = 110,
-  onDone,
-}: {
-  lines: TypeLine[];
-  speed?: number;
-  linePause?: number;
-  onDone?: () => void;
-}) {
-  const [li, setLi] = useState(0);
-  const [ci, setCi] = useState(0);
-  const [skip, setSkip] = useState(false);
-  const firedDone = useRef(false);
-  const done = skip || li >= lines.length;
-
-  useInput(() => setSkip(true), { isActive: !done });
-
-  useEffect(() => {
-    if (done) return;
-    const cur = lines[li];
-    if (!cur) return;
-    if (ci < cur.text.length) {
-      const t = setTimeout(() => setCi((c) => c + 1), speed);
-      return () => clearTimeout(t);
-    }
-    const t = setTimeout(() => {
-      setLi((l) => l + 1);
-      setCi(0);
-    }, linePause);
-    return () => clearTimeout(t);
-  }, [li, ci, done, speed, linePause]);
-
-  useEffect(() => {
-    if (done && !firedDone.current) {
-      firedDone.current = true;
-      onDone?.();
-    }
-    // onDone intentionally omitted: firedDone guards against a double-fire.
-  }, [done]);
-
-  return (
-    <Box flexDirection="column">
-      {lines.map((l, idx) => {
-        if (idx > li && !skip) return null; // not reached yet — pops in when its turn comes
-        const shown = skip || idx < li ? l.text : l.text.slice(0, ci);
-        return (
-          <Text key={idx} color={l.color} dimColor={l.dim}>
-            {shown}
-          </Text>
-        );
-      })}
-    </Box>
-  );
-}
-
 const STEPS = ['Connect', 'Authorize', 'Clients', 'Build', 'Done'] as const;
 const BANNER = `         ___
  _ __   ( _ )  _ __
@@ -155,6 +87,7 @@ type Stage =
   | 'demoSelect'
   | 'demoPrompts'
   | 'demoRunning'
+  | 'demoFollowup'
   | 'done'
   | 'error';
 
@@ -171,6 +104,7 @@ const STEP_OF: Record<Stage, number> = {
   demoSelect: 3,
   demoPrompts: 3,
   demoRunning: 3,
+  demoFollowup: 3,
   done: 4,
   error: 4,
 };
@@ -188,6 +122,7 @@ const EYEBROW: Partial<Record<Stage, string>> = {
   demoSelect: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
   demoPrompts: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
   demoRunning: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
+  demoFollowup: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
   done: 'ALL SET',
 };
 
@@ -233,11 +168,8 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   const [suggestions, setSuggestions] = useState<{ id: string; text: string }[]>([]);
   const [provider, setProvider] = useState<DemoProvider>({ kind: 'none' });
   const [demoPrompt, setDemoPrompt] = useState('');
-  // Gate the post-typewriter UI: the "Run a live demo?" choice and the prompt picker
-  // only appear once their typed-out intro has finished.
-  const [introTyped, setIntroTyped] = useState(false);
-  const [promptsTyped, setPromptsTyped] = useState(false);
   const [events, setEvents] = useState<DemoEvent[]>([]);
+  const [continueSession, setContinueSession] = useState(false); // follow-up turn in the chat
   // Live text buffer for the agent's currently-streaming reply (committed on flush).
   const liveRef = useRef('');
   const [live, setLive] = useState('');
@@ -254,12 +186,6 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
     setLines([]);
     setStage(s);
   };
-
-  // Replay the typewriter each time we (re-)enter an intro stage.
-  useEffect(() => {
-    if (stage === 'demoSelect') setIntroTyped(false);
-    if (stage === 'demoPrompts') setPromptsTyped(false);
-  }, [stage]);
 
   // 1 — connect
   useEffect(() => {
@@ -405,7 +331,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   useEffect(() => {
     if (stage !== 'demoRunning' || !checked) return;
     let off = false;
-    setEvents([]);
+    if (!continueSession) setEvents([]); // first turn clears; follow-ups keep the transcript
     liveRef.current = '';
     setLive('');
     const commitLive = () => {
@@ -433,20 +359,29 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
 
     (async () => {
       try {
-        await runDemo({ provider, instanceBaseUrl: checked.url, token: demoToken, prompt: demoPrompt, onEvent: handle });
+        await runDemo({ provider, instanceBaseUrl: checked.url, token: demoToken, prompt: demoPrompt, continueSession, onEvent: handle });
       } catch {
         if (!off) setEvents((prev) => [...prev, { type: 'error', message: 'That run could not finish, but your tools are configured.' }]);
       } finally {
         if (off) return;
         commitLive();
-        // Let the answer land, then move to Done (a clean layout repaint).
-        setTimeout(() => !off && setStage('done'), 1600);
+        // Hand back to the user: reply to keep going, or finish. We only reach Done
+        // when they choose to (in demoFollowup) — never auto-advance over the answer.
+        setStage('demoFollowup');
       }
     })();
     return () => {
       off = true;
     };
   }, [stage, checked]);
+
+  // chat follow-up — esc finishes the conversation and moves to the wrap-up.
+  useInput(
+    (_input, key) => {
+      if (key.escape) setStage('done');
+    },
+    { isActive: stage === 'demoFollowup' },
+  );
 
   // done / error — wait for Enter, then tear down the alt-screen and hand a
   // persistent summary back to the normal buffer (so onboarding/errors survive).
@@ -474,7 +409,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
       const snippet = manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey });
       out.push('', `  ${c.yellow('No AI client detected — add the n8n MCP server manually:')}`, c.dim(snippet.split('\n').map((l) => '  ' + l).join('\n')));
     }
-    out.push('', `  ${c.dim('Docs:')} https://docs.n8n.io/mcp`);
+    out.push('', `  ${c.dim('Docs:')} https://docs.n8n.io/connect/connect-to-n8n-mcp-server`);
     return out.join('\n');
   }
   function buildErrorSummary(): string {
@@ -485,6 +420,97 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
 
   const active = STEP_OF[stage];
   const showTracker = stage !== 'error'; // keep the tracker on the "ALL SET" / Done step too
+
+  // The live demo + its wrap-up are ONE persistent chat: the transcript lives in
+  // <Static> (committed once, never cleared), so the agent's reply and tool calls
+  // stay on screen. We hand back to the user after each turn (reply to continue, or
+  // esc to finish) and only render the "connected" wrap-up once they're done — never
+  // auto-advancing over the answer, and never a second screen to scroll between.
+  if (stage === 'demoRunning' || stage === 'demoFollowup' || stage === 'done') {
+    const running = stage === 'demoRunning';
+    const onDone = stage === 'done';
+    const oauth = authMode === 'oauth';
+    const ok = results.filter(isConfigured);
+    const host = (() => {
+      try {
+        return checked ? new URL(checked.url).host : '';
+      } catch {
+        return checked?.url ?? '';
+      }
+    })();
+    const header = (
+      <Box key="__chat-header" flexDirection="column" alignItems="center" paddingX={2}>
+        <Text color={PINK}>{BANNER}</Text>
+        <Box marginTop={1}>
+          <StepTracker active={STEP_OF[stage]} done={onDone} />
+        </Box>
+        <Box marginTop={1}>
+          <Text color="gray">{`n8n MCP · n8n @ ${host}`}</Text>
+        </Box>
+      </Box>
+    );
+    const items: ReactNode[] = [header, ...events.map((e, i) => <Box key={i} paddingX={2}>{eventLine(e)}</Box>)];
+    return (
+      <Box flexDirection="column">
+        <Static items={items}>{(item) => item}</Static>
+        {live.trim() ? <Box paddingX={2}>{eventLine({ type: 'text', text: live })}</Box> : null}
+        {running ? (
+          <Box paddingX={2} marginTop={1}>
+            <Spinner label="Claude is working in your n8n…" />
+          </Box>
+        ) : null}
+        {stage === 'demoFollowup' ? (
+          <Box paddingX={2} marginTop={1}>
+            <Text color={BLUE} bold>❯ </Text>
+            <TextInput
+              placeholder="Reply to keep going, or press esc to finish"
+              onSubmit={(v) => {
+                const msg = v.trim();
+                if (!msg) return;
+                setContinueSession(true);
+                setDemoPrompt(msg);
+                setStage('demoRunning');
+              }}
+            />
+          </Box>
+        ) : null}
+        {onDone ? (
+          <Box paddingX={2} marginTop={1} flexDirection="column">
+            <Text color={GREEN}>🎉 You're connected.</Text>
+            {ok.length ? (
+              <Box marginTop={1} flexDirection="column">
+                <Text color="white">
+                  {oauth
+                    ? 'Each tool signs in to n8n the first time you use it — your wizard sign-in was just for this demo:'
+                    : 'Ready to use — just start chatting in:'}
+                </Text>
+                {ok.map((r) => (
+                  <Text key={r.id}>
+                    <Text color={PINK}>• </Text>
+                    <Text color="white">{r.label}</Text>
+                    <Text color="gray"> — {clientUsage(r.id, !oauth)}</Text>
+                  </Text>
+                ))}
+              </Box>
+            ) : checked ? (
+              <Box marginTop={1} flexDirection="column">
+                <Text color="yellow">No AI client detected — add the n8n MCP server manually:</Text>
+                <Text color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey })}</Text>
+              </Box>
+            ) : null}
+            <Box marginTop={1}>
+              <Text color="gray">Docs: https://docs.n8n.io/connect/connect-to-n8n-mcp-server</Text>
+            </Box>
+          </Box>
+        ) : null}
+        {hint() ? (
+          <Box paddingX={2}>
+            <Text color="gray">{hint()}</Text>
+          </Box>
+        ) : null}
+      </Box>
+    );
+  }
 
   // Compact, horizontally-centered layout. We deliberately do NOT fill the full
   // terminal height — a full-height tree forces Ink to repaint the whole screen on
@@ -621,108 +647,48 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
         );
       }
       case 'demoSelect':
-        // "What your AI tools can do" — typed out, then an opt-in to a live demo.
         return (
           <Box flexDirection="column">
-            <TypewriterLines
-              lines={[
-                { text: 'With n8n MCP, your AI tools can:', color: 'white' },
-                { text: '  • Build workflows from a plain-English description', color: 'gray' },
-                { text: '  • Run & inspect executions', color: 'gray' },
-                { text: '  • Find & fix errors in your workflows', color: 'gray' },
-                { text: '  • List & manage what you already have', color: 'gray' },
-              ]}
-              onDone={() => setIntroTyped(true)}
-            />
-            {introTyped ? (
-              <Box marginTop={1} flexDirection="column">
-                <Text color="white">Want to see it live against your instance?</Text>
-                <Text color="gray">Runs on your own Claude Code (your login &amp; usage) — it'll ask n8n to sign in.</Text>
-                <Box marginTop={1}>
-                  <SelectList
-                    options={[
-                      { label: 'Run a live demo', value: 'run', recommended: true, description: 'Claude answers a real prompt using your n8n tools' },
-                      { label: "Skip — I'm all set", value: 'skip', description: 'jump straight to the finish' },
-                    ]}
-                    onSelect={(v) => goto(v === 'run' ? 'demoPrompts' : 'done')}
-                  />
-                </Box>
+            <Text color="white">With n8n MCP, your AI tools can:</Text>
+            <Box marginTop={1} flexDirection="column">
+              <Text color="gray">  • Build workflows from a plain-English description</Text>
+              <Text color="gray">  • Run &amp; inspect executions</Text>
+              <Text color="gray">  • Find &amp; fix errors in your workflows</Text>
+              <Text color="gray">  • List &amp; manage what you already have</Text>
+            </Box>
+            <Box marginTop={1} flexDirection="column">
+              <Text color="white">Want to see it live against your instance?</Text>
+              <Text color="gray">Runs on your own Claude Code (your login &amp; usage) — it'll ask n8n to sign in.</Text>
+              <Box marginTop={1}>
+                <SelectList
+                  options={[
+                    { label: 'Run a live demo', value: 'run', recommended: true, description: 'Claude answers a real prompt using your n8n tools' },
+                    { label: "Skip — I'm all set", value: 'skip', description: 'jump straight to the finish' },
+                  ]}
+                  onSelect={(v) => goto(v === 'run' ? 'demoPrompts' : 'done')}
+                />
               </Box>
-            ) : null}
+            </Box>
           </Box>
         );
       case 'demoPrompts':
         if (!suggestions.length) return <Spinner label="Tailoring prompts for your instance…" />;
-        // Type the sample prompts out, then turn them into a pickable list.
         return (
           <Box flexDirection="column">
             <Text color="white">Try one now, against your instance:</Text>
             <Box marginTop={1}>
-              {promptsTyped ? (
-                <SelectList
-                  options={suggestions.map((p) => ({ label: p.text, value: p.text }))}
-                  onSelect={(v) => {
-                    setDemoPrompt(v);
-                    setStage('demoRunning');
-                  }}
-                />
-              ) : (
-                <TypewriterLines
-                  lines={suggestions.map((p) => ({ text: '  ' + p.text, color: 'gray' }))}
-                  onDone={() => setPromptsTyped(true)}
-                />
-              )}
+              <SelectList
+                options={suggestions.map((p) => ({ label: p.text, value: p.text }))}
+                onSelect={(v) => {
+                  setContinueSession(false); // first turn of the chat
+                  setDemoPrompt(v);
+                  setStage('demoRunning');
+                }}
+              />
             </Box>
           </Box>
         );
-      case 'demoRunning': {
-        // Rendered inside the normal layout (one banner, clean repaint to Done).
-        const finished = events.some((e) => e.type === 'result' || e.type === 'error');
-        return (
-          <Box flexDirection="column">
-            {events.map((e, i) => (
-              <Box key={i}>{eventLine(e)}</Box>
-            ))}
-            {live.trim() ? <Box>{eventLine({ type: 'text', text: live })}</Box> : null}
-            {!finished ? (
-              <Box marginTop={1}>
-                <Spinner label="Claude is working in your n8n…" />
-              </Box>
-            ) : null}
-          </Box>
-        );
-      }
-      case 'done': {
-        const ok = results.filter(isConfigured);
-        const oauth = authMode === 'oauth';
-        return (
-          <Box flexDirection="column">
-            <Text color={GREEN}>🎉 You're connected.</Text>
-            {ok.length ? (
-              <Box marginTop={1} flexDirection="column">
-                <Text color="white">
-                  {oauth ? 'Sign in to n8n the first time you open each tool:' : 'Ready to use — just start chatting in:'}
-                </Text>
-                {ok.map((r) => (
-                  <Text key={r.id}>
-                    <Text color={PINK}>• </Text>
-                    <Text color="white">{r.label}</Text>
-                    <Text color="gray"> — {clientUsage(r.id, !oauth)}</Text>
-                  </Text>
-                ))}
-              </Box>
-            ) : checked ? (
-              <Box marginTop={1} flexDirection="column">
-                <Text color="yellow">No AI client detected — add the n8n MCP server manually:</Text>
-                <Text color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey })}</Text>
-              </Box>
-            ) : null}
-            <Box marginTop={1}>
-              <Text color="gray">Docs: https://docs.n8n.io/mcp</Text>
-            </Box>
-          </Box>
-        );
-      }
+      // demoRunning / demoFollowup / done are handled by the chat-view early return.
       case 'error':
         return (
           <Box flexDirection="column">
@@ -746,11 +712,13 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
       case 'selectClients':
         return '↑↓ move · space toggle · enter confirm';
       case 'demoSelect':
-        return introTyped ? '↑↓ move · enter select' : 'press any key to skip typing';
+        return '↑↓ move · enter select';
       case 'demoPrompts':
-        return promptsTyped ? '↑↓ move · enter run' : 'press any key to skip typing';
+        return '↑↓ move · enter run';
       case 'demoRunning':
-        return ''; // the spinner already says "Checking your connection…"
+        return ''; // the spinner already says "Claude is working…"
+      case 'demoFollowup':
+        return 'reply to keep going · esc to finish';
       case 'done':
         return 'press enter to finish';
       case 'error':

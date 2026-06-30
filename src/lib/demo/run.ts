@@ -31,6 +31,8 @@ export interface RunDemoOptions {
   instanceBaseUrl: string;
   token?: string;
   prompt: string;
+  /** Continue the prior Claude session (follow-up turns in the chat). */
+  continueSession?: boolean;
   onEvent: (e: DemoEvent) => void;
   fetchImpl?: typeof fetch;
   listToolsImpl?: ListTools;
@@ -68,6 +70,7 @@ async function runAgentSdkDemo(opts: RunDemoOptions): Promise<void> {
         },
         allowedTools: ['mcp__n8n'], // pre-approve the n8n tools so the demo doesn't prompt
         includePartialMessages: true,
+        ...(opts.continueSession ? { continue: true } : {}),
       },
     });
 
