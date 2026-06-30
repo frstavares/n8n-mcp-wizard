@@ -20,7 +20,7 @@ export function normalizeInstanceUrl(input: string): string {
   const trimmed = (input ?? '').trim();
   if (!trimmed) {
     throw new WizardError('INVALID_URL', 'No instance URL provided.', {
-      suggestion: 'Pass your n8n URL, e.g. npx @n8n/mcp acme.app.n8n.cloud',
+      suggestion: 'Pass your n8n URL, e.g. npx @n8n/mcp-wizard acme.app.n8n.cloud',
     });
   }
   const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;

@@ -393,15 +393,12 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
         suggestPrompts(checked.url, demoToken).catch(() => []),
       ]);
       if (off) return;
-      // The SDK demo would open its OWN browser OAuth for n8n unless it has a
-      // static credential. Only use it when we wrote an API key (sent as a header);
-      // in browser-OAuth mode, prove the connection with the token we already have.
-      const prov: DemoProvider =
-        base.kind === 'agent-sdk' && authMode !== 'api-key'
-          ? demoToken
-            ? { kind: 'deterministic' }
-            : { kind: 'none' }
-          : base;
+      // The Claude Agent SDK opens its OWN browser OAuth against the n8n MCP server
+      // — even when we pass the credential as a Bearer header — which means a second
+      // sign-in right after the wizard's. So we never auto-run it: prove the
+      // connection with the deterministic, fetch-based demo using the token/key we
+      // already hold. No second browser, and it runs the user's actual prompt.
+      const prov: DemoProvider = base.kind === 'agent-sdk' ? (demoToken ? { kind: 'deterministic' } : { kind: 'none' }) : base;
       setProvider(prov);
       setSuggestions(prompts);
     })();
@@ -612,7 +609,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
       {/* Logo + step tracker: centered. */}
       <Box flexDirection="column" alignItems="center">
         <Text color={PINK}>{BANNER}</Text>
-        <Text color="gray">@n8n/mcp · connect n8n to your AI tools</Text>
+        <Text color="gray">@n8n/mcp-wizard · connect n8n to your AI tools</Text>
         {showTracker ? (
           <Box marginTop={1}>
             <StepTracker active={active} done={false} />

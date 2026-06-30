@@ -1,4 +1,4 @@
-# @n8n/mcp
+# @n8n/mcp-wizard
 
 Connect your n8n instance to your AI tools in **one command** — and start building workflows by chatting.
 
@@ -7,7 +7,7 @@ Connect your n8n instance to your AI tools in **one command** — and start buil
 npx github:frstavares/n8n-mcp-wizard acme.app.n8n.cloud
 
 # Future (npm):
-npx @n8n/mcp acme.app.n8n.cloud
+npx @n8n/mcp-wizard acme.app.n8n.cloud
 ```
 
 ## What it does
@@ -20,7 +20,7 @@ npx @n8n/mcp acme.app.n8n.cloud
 ## Usage
 
 ```
-npx @n8n/mcp [url] [options]
+npx @n8n/mcp-wizard [url] [options]
 
 Arguments:
   url                  your n8n instance URL (e.g. acme.app.n8n.cloud)
@@ -36,14 +36,14 @@ Options:
 **Non-interactive example** (CI / scripted):
 
 ```bash
-npx @n8n/mcp https://acme.app.n8n.cloud --api-key "$N8N_MCP_KEY" --yes
+npx @n8n/mcp-wizard https://acme.app.n8n.cloud --api-key "$N8N_MCP_KEY" --yes
 ```
 
 **Uninstall** — remove the n8n MCP server from your tools:
 
 ```bash
-npx @n8n/mcp remove                 # all detected tools
-npx @n8n/mcp remove --client cursor # just one
+npx @n8n/mcp-wizard remove                 # all detected tools
+npx @n8n/mcp-wizard remove --client cursor # just one
 ```
 
 ## Requirements

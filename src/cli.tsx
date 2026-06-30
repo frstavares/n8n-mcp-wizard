@@ -46,7 +46,7 @@ function line(s = '') {
 async function main() {
   const program = new Command();
   program
-    .name('@n8n/mcp')
+    .name('@n8n/mcp-wizard')
     .description('Connect your n8n instance to your AI tools in one command.')
     .version(VERSION)
     .argument('[url]', 'your n8n instance URL (e.g. acme.app.n8n.cloud)')
@@ -58,11 +58,11 @@ async function main() {
       'after',
       `
 Examples:
-  npx @n8n/mcp                                  interactive — asks for everything
-  npx @n8n/mcp acme.app.n8n.cloud               start from your instance URL
-  npx @n8n/mcp acme.app.n8n.cloud --api-key K   non-interactive (every tool works at once)
-  npx @n8n/mcp <url> --client cursor claude-code   only these tools
-  npx @n8n/mcp remove                           uninstall the n8n MCP server from your tools
+  npx @n8n/mcp-wizard                                  interactive — asks for everything
+  npx @n8n/mcp-wizard acme.app.n8n.cloud               start from your instance URL
+  npx @n8n/mcp-wizard acme.app.n8n.cloud --api-key K   non-interactive (every tool works at once)
+  npx @n8n/mcp-wizard <url> --client cursor claude-code   only these tools
+  npx @n8n/mcp-wizard remove                           uninstall the n8n MCP server from your tools
 `,
     )
     .action((url, opts) => run(url, opts as Options));
@@ -113,12 +113,12 @@ async function run(urlArg: string | undefined, opts: Options) {
 async function runNonInteractive(urlArg: string | undefined, opts: Options) {
   line();
   line(BANNER);
-  line(`${c.dim(`@n8n/mcp v${VERSION}`)} ${c.dim('· connect n8n to your AI tools')}`);
+  line(`${c.dim(`@n8n/mcp-wizard v${VERSION}`)} ${c.dim('· connect n8n to your AI tools')}`);
   line();
 
   if (!urlArg) {
     throw new WizardError('MISSING_INPUT', 'No instance URL provided.', {
-      suggestion: 'Pass it as an argument: npx @n8n/mcp <your-instance-url>',
+      suggestion: 'Pass it as an argument: npx @n8n/mcp-wizard <your-instance-url>',
     });
   }
 

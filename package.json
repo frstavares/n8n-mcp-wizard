@@ -1,7 +1,7 @@
 {
   "name": "n8n-mcp",
   "version": "0.1.0",
-  "description": "Connect your n8n instance to your AI tools in one command. npx @n8n/mcp",
+  "description": "Connect your n8n instance to your AI tools in one command. npx @n8n/mcp-wizard",
   "type": "module",
   "bin": {
     "n8n-mcp": "./dist/cli.js"

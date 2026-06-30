@@ -140,7 +140,7 @@ async function runDeterministicDemo(opts: RunDemoOptions): Promise<void> {
     onEvent({ type: 'error', message: 'No token available for the connection check.' });
     return;
   }
-  onEvent({ type: 'prompt', text: DETERMINISTIC_PROMPT });
+  onEvent({ type: 'prompt', text: opts.prompt?.trim() || DETERMINISTIC_PROMPT });
 
   let tools: McpTool[];
   try {

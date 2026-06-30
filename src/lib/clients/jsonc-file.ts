@@ -56,7 +56,7 @@ export async function upsertJson(
 /**
  * Remove n8n server entries from a JSON(C) config. With an explicit `serverKey`,
  * removes just that one; without, sweeps every n8n* key under `parentPath` (so
- * `npx @n8n/mcp remove` cleans up per-instance keys it can't otherwise name).
+ * `npx @n8n/mcp-wizard remove` cleans up per-instance keys it can't otherwise name).
  * Returns the keys actually removed. Preserves comments/formatting.
  */
 export async function removeServerEntries(
