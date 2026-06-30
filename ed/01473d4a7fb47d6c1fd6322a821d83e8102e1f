@@ -1,0 +1,25 @@
+src/cli.tsx
+  s_8e2411d05aa826::t_17de89c8cb2a89 142,146
+test/server-key.test.ts
+  s_8e2411d05aa826::t_dcda1d5d5c1972 2,5,8
+src/lib/clients/types.ts
+  s_8e2411d05aa826::t_f5fab3ff5efae7 41-42,44-45
+src/ui/app.tsx
+  s_8e2411d05aa826::t_0ab21ebdb086e9 367,371,511,810
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ed01473d4a7fb47d6c1fd6322a821d83e8102e1f",
+  "prompts": {},
+  "sessions": {
+    "s_8e2411d05aa826": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "06c0618c-100e-4e3a-9d95-857be67ec177",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "frstavares <filipe.tavares@n8n.io>"
+    }
+  }
+}
