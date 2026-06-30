@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Box, Static, Text, render, useApp, useInput } from 'ink';
+import { Box, Text, render, useApp, useInput } from 'ink';
 import { Spinner, MultiSelect, TextInput } from '@inkjs/ui';
 import { toWizardError, type WizardError } from '../lib/errors.js';
 import { checkInstance, ensureValidKey, type CheckedInstance } from '../lib/flow.js';
@@ -216,11 +216,9 @@ interface AppProps {
   demo: boolean;
   /** summary is printed to the normal buffer after the alt-screen is torn down. */
   onExit: (code: number, summary: string) => void;
-  /** Wipe the terminal (incl. committed <Static> output) for a fresh full repaint. */
-  clearScreen?: () => void;
 }
 
-export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScreen }: AppProps) {
+export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps) {
   const { exit } = useApp();
 
   const [stage, setStage] = useState<Stage>(initialUrl ? 'connecting' : 'askUrl');
@@ -311,6 +309,10 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
         });
         if (off) return;
         setDemoToken(res.accessToken);
+        // Write the token we just obtained into each tool's config as a Bearer
+        // header, so the tools reuse THIS sign-in instead of each running their own
+        // n8n OAuth (a second browser right after this one).
+        setWriteKey(res.accessToken);
         setAuthMode('oauth');
         addLine(<Text key="o"><Text color={GREEN}>✓</Text> Authorized in browser</Text>);
         setTimeout(() => !off && goto('detecting'), 600);
@@ -415,12 +417,8 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
         if (!off) setEvents((prev) => [...prev, { type: 'error', message: 'That check could not run, but your tools are configured.' }]);
       } finally {
         if (off) return;
-        // Let the result land, then wipe the chat transcript and show Done.
-        setTimeout(() => {
-          if (off) return;
-          clearScreen?.(); // <Static> output is permanent — clear it before Done
-          setStage('done');
-        }, 1400);
+        // Let the result land, then move to Done (a clean layout repaint).
+        setTimeout(() => !off && setStage('done'), 1400);
       }
     })();
     return () => {
@@ -443,10 +441,11 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
 
   function buildDoneSummary(): string {
     const ok = results.filter(isConfigured);
-    const oauth = authMode === 'oauth';
     const out = [`  ${c.green("🎉 You're connected.")}`];
     if (ok.length) {
-      out.push('', `  ${oauth ? 'Sign in to n8n the first time you open each tool:' : 'Ready to use — just start chatting in:'}`);
+      // A credential (API key, or the OAuth token from this session) is written into
+      // every config, so tools work immediately — no per-tool sign-in.
+      out.push('', `  Ready to use — just start chatting in:`);
       for (const r of ok) out.push(`  ${c.pink('•')} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, true))}`);
     } else if (checked) {
       const snippet = manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey });
@@ -468,52 +467,6 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
   // terminal height — a full-height tree forces Ink to repaint the whole screen on
   // every spinner tick, which flickers. Staying shorter than the terminal lets Ink
   // diff in place (no flashing).
-  // Chat view (build step) — opencode/claude-code style. The header (logo +
-  // tracker + context) and every finished message live in <Static>, so they're
-  // committed once and never re-render (typing the reply doesn't flash them).
-  // Only the throttled live line + the input redraw.
-  if (stage === 'demoRunning') {
-    const host = (() => {
-      try {
-        return checked ? new URL(checked.url).host : '';
-      } catch {
-        return checked?.url ?? '';
-      }
-    })();
-    const header = (
-      <Box key="__chat-header" flexDirection="column" alignItems="center" paddingX={2}>
-        <Text color={PINK}>{BANNER}</Text>
-        <Box marginTop={1}>
-          <StepTracker active={3} done={false} />
-        </Box>
-        <Box marginTop={1}>
-          <Text color="gray">{`n8n MCP · n8n @ ${host}`}</Text>
-        </Box>
-      </Box>
-    );
-    const items: ReactNode[] = [
-      header,
-      ...events.map((e, i) => (
-        <Box key={i} paddingX={2}>
-          {eventLine(e)}
-        </Box>
-      )),
-    ];
-    // The transcript lives in <Static> (committed once, never re-renders); only the
-    // spinner below it redraws, until the connection check lands.
-    const finished = events.some((e) => e.type === 'result' || e.type === 'error');
-    return (
-      <Box flexDirection="column">
-        <Static items={items}>{(item) => item}</Static>
-        {!finished ? (
-          <Box paddingX={2} marginTop={1}>
-            <Spinner label="Checking your connection…" />
-          </Box>
-        ) : null}
-      </Box>
-    );
-  }
-
   // Top-aligned (NOT full-height-centered): a full-height flex re-flows the whole
   // screen on every spinner tick → flicker. Top-aligned keeps the tree compact so
   // Ink only repaints what changed. The alt-screen still gives a clean full screen.
@@ -698,17 +651,31 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
             </Box>
           </Box>
         );
+      case 'demoRunning': {
+        // Rendered inside the normal layout (one banner, clean repaint to Done) —
+        // no <Static>, since this is a short one-shot check, not a token stream.
+        const finished = events.some((e) => e.type === 'result' || e.type === 'error');
+        return (
+          <Box flexDirection="column">
+            {events.map((e, i) => (
+              <Box key={i}>{eventLine(e)}</Box>
+            ))}
+            {!finished ? (
+              <Box marginTop={1}>
+                <Spinner label="Checking your connection…" />
+              </Box>
+            ) : null}
+          </Box>
+        );
+      }
       case 'done': {
         const ok = results.filter(isConfigured);
-        const oauth = authMode === 'oauth';
         return (
           <Box flexDirection="column">
             <Text color={GREEN}>🎉 You're connected.</Text>
             {ok.length ? (
               <Box marginTop={1} flexDirection="column">
-                <Text color="white">
-                  {oauth ? 'Sign in to n8n the first time you open each tool:' : 'Ready to use — just start chatting in:'}
-                </Text>
+                <Text color="white">Ready to use — just start chatting in:</Text>
                 {ok.map((r) => (
                   <Text key={r.id}>
                     <Text color={PINK}>• </Text>
@@ -826,22 +793,15 @@ export async function runInk(props: Omit<AppProps, 'onExit'>): Promise<number> {
   out.write('\x1b[?1049h\x1b[H');
   process.once('exit', restore);
   try {
-    // The chat view commits its transcript via <Static> (permanent output). When we
-    // leave it for the Done screen, that transcript would linger; instance.clear()
-    // wipes the screen and resets Ink's frame so the next render is a clean repaint.
-    const screen = { clear: () => {} };
-    const instance = render(
+    const { waitUntilExit } = render(
       <App
         {...props}
-        clearScreen={() => screen.clear()}
         onExit={(c, s) => {
           code = c;
           summary = s;
         }}
       />,
     );
-    screen.clear = () => instance.clear();
-    const { waitUntilExit } = instance;
     await waitUntilExit();
   } finally {
     restore();
