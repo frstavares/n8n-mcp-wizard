@@ -152,9 +152,7 @@ async function runNonInteractive(urlArg: string | undefined, opts: Options) {
   if (opts.demo) {
     line();
     line(`  ${c.pink('─── First message ───')}`);
-    const base = await resolveProvider(demoToken);
-    // SDK demo only with an API key (header auth, no second OAuth); else deterministic.
-    const provider = base.kind === 'agent-sdk' && authMode !== 'api-key' ? (demoToken ? { kind: 'deterministic' as const } : { kind: 'none' as const }) : base;
+    const provider = await resolveProvider(demoToken);
     const prompts = await suggestPrompts(url, demoToken);
     const prompt = (prompts[0] ?? SAMPLE_PROMPTS[0])!.text;
     await runDemo({ provider, instanceBaseUrl: url, token: demoToken, prompt, onEvent: printDemoEvent });

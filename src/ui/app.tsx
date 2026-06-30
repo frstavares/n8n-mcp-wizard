@@ -155,7 +155,6 @@ type Stage =
   | 'demoSelect'
   | 'demoPrompts'
   | 'demoRunning'
-  | 'demoFollowup'
   | 'done'
   | 'error';
 
@@ -172,7 +171,6 @@ const STEP_OF: Record<Stage, number> = {
   demoSelect: 3,
   demoPrompts: 3,
   demoRunning: 3,
-  demoFollowup: 3,
   done: 4,
   error: 4,
 };
@@ -190,7 +188,6 @@ const EYEBROW: Partial<Record<Stage, string>> = {
   demoSelect: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
   demoPrompts: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
   demoRunning: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
-  demoFollowup: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
   done: 'ALL SET',
 };
 
@@ -238,15 +235,11 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
   const [suggestions, setSuggestions] = useState<{ id: string; text: string }[]>([]);
   const [provider, setProvider] = useState<DemoProvider>({ kind: 'none' });
   const [demoPrompt, setDemoPrompt] = useState('');
-  const [continueSession, setContinueSession] = useState(false);
   // Gate the post-typewriter UI: the "Run a live demo?" choice and the prompt picker
   // only appear once their typed-out intro has finished.
   const [introTyped, setIntroTyped] = useState(false);
   const [promptsTyped, setPromptsTyped] = useState(false);
   const [events, setEvents] = useState<DemoEvent[]>([]);
-  // Live token buffer for the currently-streaming block (kept out of <Static>).
-  const liveRef = useRef<{ kind: 'text' | 'thinking'; text: string } | null>(null);
-  const [live, setLive] = useState<{ kind: 'text' | 'thinking'; text: string } | null>(null);
   const [oauthUrl, setOauthUrl] = useState('');
   const [lines, setLines] = useState<ReactNode[]>([]);
   const [error, setError] = useState<WizardError | null>(null);
@@ -392,13 +385,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
         suggestPrompts(checked.url, demoToken).catch(() => []),
       ]);
       if (off) return;
-      // The Claude Agent SDK opens its OWN browser OAuth against the n8n MCP server
-      // — even when we pass the credential as a Bearer header — which means a second
-      // sign-in right after the wizard's. So we never auto-run it: prove the
-      // connection with the deterministic, fetch-based demo using the token/key we
-      // already hold. No second browser, and it runs the user's actual prompt.
-      const prov: DemoProvider = base.kind === 'agent-sdk' ? (demoToken ? { kind: 'deterministic' } : { kind: 'none' }) : base;
-      setProvider(prov);
+      setProvider(base);
       setSuggestions(prompts);
     })();
     return () => {
@@ -410,40 +397,9 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
   useEffect(() => {
     if (stage !== 'demoRunning' || !checked) return;
     let off = false;
-    if (!continueSession) setEvents([]); // first turn clears; the chat header is rendered separately
-    liveRef.current = null;
-    setLive(null);
-
-    // Buffer streaming deltas in `live` (a dynamic line); commit finished blocks
-    // and other events into the <Static> transcript.
-    const commitLive = () => {
-      const l = liveRef.current;
-      if (l && l.text.trim()) setEvents((ev) => [...ev, { type: l.kind, text: l.text.trim() }]);
-      liveRef.current = null;
-      setLive(null);
-    };
-    // Throttle live re-renders (~11/s) so token streaming stays smooth, not flashy.
-    let liveTimer: ReturnType<typeof setTimeout> | null = null;
-    const clearTimer = () => {
-      if (liveTimer) clearTimeout(liveTimer);
-      liveTimer = null;
-    };
+    setEvents([]); // the chat header is rendered separately
     const handle = (e: DemoEvent) => {
-      if (off) return;
-      if (e.type === 'delta') {
-        const cur = liveRef.current;
-        liveRef.current = cur && cur.kind === e.kind ? { kind: e.kind, text: cur.text + e.text } : { kind: e.kind, text: e.text };
-        if (!liveTimer) liveTimer = setTimeout(() => { clearTimer(); if (!off) setLive(liveRef.current ? { ...liveRef.current } : null); }, 90);
-        return;
-      }
-      if (e.type === 'flush') {
-        clearTimer();
-        commitLive();
-        return;
-      }
-      clearTimer();
-      commitLive();
-      setEvents((ev) => [...ev, e]);
+      if (!off) setEvents((ev) => [...ev, e]);
     };
 
     (async () => {
@@ -453,39 +409,24 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
           instanceBaseUrl: checked.url,
           token: demoToken,
           prompt: demoPrompt,
-          continueSession,
           onEvent: handle,
         });
       } catch {
-        if (!off) setEvents((prev) => [...prev, { type: 'error', message: 'That turn could not run, but your tools are configured.' }]);
+        if (!off) setEvents((prev) => [...prev, { type: 'error', message: 'That check could not run, but your tools are configured.' }]);
       } finally {
         if (off) return;
-        // Conversational only when we're driving the agent; otherwise wrap up.
-        if (provider.kind === 'agent-sdk') setStage('demoFollowup');
-        else
-          setTimeout(() => {
-            if (off) return;
-            clearScreen?.(); // wipe the chat transcript before the Done screen
-            setStage('done');
-          }, 1200);
+        // Let the result land, then wipe the chat transcript and show Done.
+        setTimeout(() => {
+          if (off) return;
+          clearScreen?.(); // <Static> output is permanent — clear it before Done
+          setStage('done');
+        }, 1400);
       }
     })();
     return () => {
       off = true;
-      clearTimer();
     };
   }, [stage, checked]);
-
-  // chat follow-up — you decide when to finish (esc), or keep the conversation going
-  useInput(
-    (_input, key) => {
-      if (stage === 'demoFollowup' && key.escape) {
-        clearScreen?.(); // wipe the chat transcript so Done isn't appended below it
-        setStage('done');
-      }
-    },
-    { isActive: stage === 'demoFollowup' },
-  );
 
   // done / error — wait for Enter, then tear down the alt-screen and hand a
   // persistent summary back to the normal buffer (so onboarding/errors survive).
@@ -531,8 +472,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
   // tracker + context) and every finished message live in <Static>, so they're
   // committed once and never re-render (typing the reply doesn't flash them).
   // Only the throttled live line + the input redraw.
-  if (stage === 'demoRunning' || stage === 'demoFollowup') {
-    const agentLabel = provider.kind === 'agent-sdk' ? 'Claude Code' : 'n8n MCP';
+  if (stage === 'demoRunning') {
     const host = (() => {
       try {
         return checked ? new URL(checked.url).host : '';
@@ -547,7 +487,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
           <StepTracker active={3} done={false} />
         </Box>
         <Box marginTop={1}>
-          <Text color="gray">{`${agentLabel} · n8n @ ${host}`}</Text>
+          <Text color="gray">{`n8n MCP · n8n @ ${host}`}</Text>
         </Box>
       </Box>
     );
@@ -559,41 +499,15 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
         </Box>
       )),
     ];
-    const running = stage === 'demoRunning';
+    // The transcript lives in <Static> (committed once, never re-renders); only the
+    // spinner below it redraws, until the connection check lands.
+    const finished = events.some((e) => e.type === 'result' || e.type === 'error');
     return (
       <Box flexDirection="column">
         <Static items={items}>{(item) => item}</Static>
-        {/* Working state sits at the TOP of the live region — directly under the
-            user's prompt and above the streaming response — so activity shows up
-            right where the answer will appear, not glued to the input. */}
-        {running ? (
+        {!finished ? (
           <Box paddingX={2} marginTop={1}>
-            <Spinner label="Working…" />
-          </Box>
-        ) : null}
-        {live && live.text.trim() ? (
-          <Box paddingX={2}>{eventLine(live.kind === 'thinking' ? { type: 'thinking', text: live.text } : { type: 'text', text: live.text })}</Box>
-        ) : null}
-        {/* Input is always mounted and pinned at the bottom (claude-code style). It's
-            only disabled while a turn runs, so the layout never jumps and the reply
-            box stays in one place the whole session. */}
-        <Box paddingX={2} marginTop={1}>
-          <Text color={running ? 'gray' : BLUE} bold>❯ </Text>
-          <TextInput
-            isDisabled={running}
-            placeholder={running ? 'Working… reply when this finishes' : 'Reply, or press esc to finish'}
-            onSubmit={(v) => {
-              const msg = v.trim();
-              if (!msg) return;
-              setContinueSession(true);
-              setDemoPrompt(msg);
-              setStage('demoRunning');
-            }}
-          />
-        </Box>
-        {hint() ? (
-          <Box paddingX={2}>
-            <Text color="gray">{hint()}</Text>
+            <Spinner label="Checking your connection…" />
           </Box>
         ) : null}
       </Box>
@@ -771,7 +685,6 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
                 <SelectList
                   options={suggestions.map((p) => ({ label: p.text, value: p.text }))}
                   onSelect={(v) => {
-                    setContinueSession(false);
                     setDemoPrompt(v);
                     setStage('demoRunning');
                   }}
@@ -843,9 +756,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
       case 'demoPrompts':
         return promptsTyped ? '↑↓ move · enter run' : 'press any key to skip typing';
       case 'demoRunning':
-        return ''; // the spinner already says "Working…"
-      case 'demoFollowup':
-        return 'type a reply · enter · esc to finish';
+        return ''; // the spinner already says "Checking your connection…"
       case 'done':
         return 'press enter to finish';
       case 'error':

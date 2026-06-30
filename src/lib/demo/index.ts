@@ -3,7 +3,7 @@
  * MCP config, to prove the n8n MCP server works end-to-end.
  *
  * Public surface:
- *   resolveProvider(token?)  → which demo to run (installed CLI > deterministic > none)
+ *   resolveProvider(token?)  → which demo to run (deterministic with a token, else none)
  *   runDemo(opts)            → run it, streaming structured DemoEvents
  *   SAMPLE_PROMPTS           → build-first prompts for an empty n8n instance
  */

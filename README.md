@@ -59,7 +59,7 @@ npx @n8n/mcp-wizard remove --client cursor # just one
 
 ## Status
 
-Early beta. Working today: the interactive TUI, instance checks, both auth modes (browser OAuth and API-key, with validation), config writers for all six clients (Claude Code, Cursor, Claude Desktop, VS Code, Codex, Zed) plus a prefix-aware uninstall, the typed-out discovery step with an opt-in live demo that proves the connection against your instance, and full error handling (MCP-not-enabled, unreachable, no clients detected, per-client write failures). The Claude-driven demo (Claude actually building a workflow) is intentionally not auto-run: the Agent SDK opens its own n8n login, which would mean a second sign-in. Telemetry is planned but not yet shipped.
+Early beta. Working today: the interactive TUI, instance checks, both auth modes (browser OAuth and API-key, with validation), config writers for all six clients (Claude Code, Cursor, Claude Desktop, VS Code, Codex, Zed) plus a prefix-aware uninstall, the typed-out discovery step with an opt-in demo that proves the connection against your instance, and full error handling (MCP-not-enabled, unreachable, no clients detected, per-client write failures). The demo is a deterministic, no-LLM connection check that runs your chosen prompt against your n8n using the credential you already have — it doesn't drive an external agent, which would open its own n8n login (a second sign-in). Telemetry is planned but not yet shipped.
 
 ## Develop
 

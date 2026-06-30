@@ -3,31 +3,18 @@ import { resolveProvider } from '../src/lib/demo/resolver.js';
 import { runDemo, type DemoEvent } from '../src/lib/demo/run.js';
 import type { McpTool } from '../src/lib/mcp-client.js';
 
-/** Build a fake commandExists that reports the given commands as installed. */
-function installed(...present: string[]): (cmd: string) => Promise<boolean> {
-  const set = new Set<string>(present);
-  return async (cmd) => set.has(cmd);
-}
-
 /** A listTools stand-in that returns the given tools (ignores network). */
 function listToolsReturning(tools: McpTool[]) {
   return async () => tools;
 }
 
 describe('resolveProvider', () => {
-  it('uses the Agent SDK when Claude Code is installed', async () => {
-    const p = await resolveProvider('tok', installed('claude'));
-    expect(p).toEqual({ kind: 'agent-sdk' });
+  it('uses the deterministic demo when a token is present', async () => {
+    expect(await resolveProvider('tok')).toEqual({ kind: 'deterministic' });
   });
 
-  it('uses the deterministic demo when Claude Code is missing but a token is present', async () => {
-    const p = await resolveProvider('tok', installed());
-    expect(p).toEqual({ kind: 'deterministic' });
-  });
-
-  it('returns none when no Claude Code and no token', async () => {
-    const p = await resolveProvider(undefined, installed());
-    expect(p).toEqual({ kind: 'none' });
+  it('returns none when there is no token', async () => {
+    expect(await resolveProvider()).toEqual({ kind: 'none' });
   });
 });
 
@@ -43,7 +30,7 @@ describe('runDemo (deterministic)', () => {
       provider: { kind: 'deterministic' },
       instanceBaseUrl: 'https://acme.app.n8n.cloud',
       token: 'tok',
-      prompt: 'ignored for deterministic',
+      prompt: 'List my workflows and tell me what they do',
       onEvent: (e) => events.push(e),
       listToolsImpl: listToolsReturning(tools),
     });
@@ -52,6 +39,10 @@ describe('runDemo (deterministic)', () => {
     expect(types).toContain('prompt');
     expect(types).toContain('tool');
     expect(types).toContain('tool-done');
+
+    // The demo echoes the prompt the user actually picked, not a canned one.
+    const promptEvent = events.find((e) => e.type === 'prompt') as Extract<DemoEvent, { type: 'prompt' }>;
+    expect(promptEvent.text).toBe('List my workflows and tell me what they do');
 
     // Picks a read/list/search tool as representative, not the create one.
     const toolEvent = events.find((e) => e.type === 'tool') as Extract<DemoEvent, { type: 'tool' }>;
