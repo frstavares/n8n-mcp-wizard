@@ -10,7 +10,6 @@ import {
   detectClients,
   getClient,
   manualSnippet,
-  serverKeyForInstance,
   type ClientDef,
   type ClientId,
   type ClientWriteResult,
@@ -365,11 +364,11 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
       try {
         if (detected.length === 0) {
           addLine(<Text key="nc" color="yellow">No supported AI client detected.</Text>);
-          addLine(<Text key="man" color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: serverKeyForInstance(checked.url) })}</Text>);
+          addLine(<Text key="man" color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey })}</Text>);
           setTimeout(() => !off && goto(demo ? 'demoSelect' : 'done'), 1500);
           return;
         }
-        const res = await configureClients(detected, { mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: serverKeyForInstance(checked.url) });
+        const res = await configureClients(detected, { mcpUrl: checked.mcpUrl, apiKey: writeKey });
         if (off) return;
         setResults(res);
         res.forEach((r) => addLine(resultLine(r)));
@@ -509,7 +508,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
       out.push('', `  ${oauth ? 'Sign in to n8n the first time you open each tool:' : 'Ready to use — just start chatting in:'}`);
       for (const r of ok) out.push(`  ${c.pink('•')} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, true))}`);
     } else if (checked) {
-      const snippet = manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: serverKeyForInstance(checked.url) });
+      const snippet = manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey });
       out.push('', `  ${c.yellow('No AI client detected — add the n8n MCP server manually:')}`, c.dim(snippet.split('\n').map((l) => '  ' + l).join('\n')));
     }
     out.push('', `  ${c.dim('Docs:')} https://docs.n8n.io/mcp`);
@@ -808,7 +807,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
             ) : checked ? (
               <Box marginTop={1} flexDirection="column">
                 <Text color="yellow">No AI client detected — add the n8n MCP server manually:</Text>
-                <Text color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: serverKeyForInstance(checked.url) })}</Text>
+                <Text color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey })}</Text>
               </Box>
             ) : null}
             <Box marginTop={1}>
