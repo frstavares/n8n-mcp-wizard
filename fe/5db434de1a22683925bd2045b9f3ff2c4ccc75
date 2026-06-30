@@ -1,0 +1,33 @@
+src/ui/app.tsx
+  s_8e2411d05aa826::t_a90c3574d9d86a 842,844
+  s_8e2411d05aa826::t_3cc0d0f16c0180 366-367
+src/lib/demo/run.ts
+  s_8e2411d05aa826::t_5cc0a8162e4de2 150
+src/lib/mcp-client.ts
+  s_8e2411d05aa826::t_6babdc5d81dd24 126-127
+  s_8e2411d05aa826::t_de0aeac9419687 143-144
+  s_8e2411d05aa826::t_03addcf7fbebe2 52,60-68,73-75,77
+  s_8e2411d05aa826::t_497520540e838c 76,78
+test/mcp-client.test.ts
+  s_8e2411d05aa826::t_26ebf558d20ea9 156-162,168-169
+  s_8e2411d05aa826::t_f746ce1b6492d8 163-167
+README.md
+  s_8e2411d05aa826::t_f5fbd104b3d697 62
+  s_8e2411d05aa826::t_e1c54b23b129c5 18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fe5db434de1a22683925bd2045b9f3ff2c4ccc75",
+  "prompts": {},
+  "sessions": {
+    "s_8e2411d05aa826": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "06c0618c-100e-4e3a-9d95-857be67ec177",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "frstavares <filipe.tavares@n8n.io>"
+    }
+  }
+}
