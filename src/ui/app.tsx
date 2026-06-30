@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Box, Static, Text, render, useApp, useInput, useStdout } from 'ink';
+import { Box, Static, Text, render, useApp, useInput } from 'ink';
 import { Spinner, MultiSelect, TextInput } from '@inkjs/ui';
 import { toWizardError, type WizardError } from '../lib/errors.js';
 import { checkInstance, ensureValidKey, type CheckedInstance } from '../lib/flow.js';
@@ -152,8 +152,6 @@ interface AppProps {
 
 export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps) {
   const { exit } = useApp();
-  const { stdout } = useStdout();
-  const rows = Math.max(12, (stdout?.rows ?? 24) - 1);
 
   const [stage, setStage] = useState<Stage>(initialUrl ? 'connecting' : 'askUrl');
   const [url, setUrl] = useState(initialUrl);
@@ -323,18 +321,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   useEffect(() => {
     if (stage !== 'demoRunning' || !checked) return;
     let off = false;
-    if (!continueSession) {
-      // First turn: seed the transcript with the context (which agent + which instance).
-      const host = (() => {
-        try {
-          return new URL(checked.url).host;
-        } catch {
-          return checked.url;
-        }
-      })();
-      const agent = provider.kind === 'agent-sdk' ? 'Claude Code' : 'n8n MCP (direct)';
-      setEvents([{ type: 'header', agent, host }]);
-    }
+    if (!continueSession) setEvents([]); // first turn clears; the chat header is rendered separately
     liveRef.current = null;
     setLive(null);
 
@@ -346,19 +333,26 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
       liveRef.current = null;
       setLive(null);
     };
+    // Throttle live re-renders (~11/s) so token streaming stays smooth, not flashy.
+    let liveTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearTimer = () => {
+      if (liveTimer) clearTimeout(liveTimer);
+      liveTimer = null;
+    };
     const handle = (e: DemoEvent) => {
       if (off) return;
       if (e.type === 'delta') {
         const cur = liveRef.current;
-        const next = cur && cur.kind === e.kind ? { kind: e.kind, text: cur.text + e.text } : { kind: e.kind, text: e.text };
-        liveRef.current = next;
-        setLive(next);
+        liveRef.current = cur && cur.kind === e.kind ? { kind: e.kind, text: cur.text + e.text } : { kind: e.kind, text: e.text };
+        if (!liveTimer) liveTimer = setTimeout(() => { clearTimer(); if (!off) setLive(liveRef.current ? { ...liveRef.current } : null); }, 90);
         return;
       }
       if (e.type === 'flush') {
+        clearTimer();
         commitLive();
         return;
       }
+      clearTimer();
       commitLive();
       setEvents((ev) => [...ev, e]);
     };
@@ -384,6 +378,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
     })();
     return () => {
       off = true;
+      clearTimer();
     };
   }, [stage, checked]);
 
@@ -435,42 +430,65 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   // terminal height — a full-height tree forces Ink to repaint the whole screen on
   // every spinner tick, which flickers. Staying shorter than the terminal lets Ink
   // diff in place (no flashing).
-  // Chat view (build step): full-width scrolling transcript via <Static> so the
-  // committed lines never re-render — typing in the reply box doesn't flash them.
+  // Chat view (build step) — opencode/claude-code style. The header (logo +
+  // tracker + context) and every finished message live in <Static>, so they're
+  // committed once and never re-render (typing the reply doesn't flash them).
+  // Only the throttled live line + the input redraw.
   if (stage === 'demoRunning' || stage === 'demoFollowup') {
+    const agentLabel = provider.kind === 'agent-sdk' ? 'Claude Code' : 'n8n MCP';
+    const host = (() => {
+      try {
+        return checked ? new URL(checked.url).host : '';
+      } catch {
+        return checked?.url ?? '';
+      }
+    })();
+    const header = (
+      <Box key="__chat-header" flexDirection="column" alignItems="center" paddingX={2}>
+        <Text color={PINK}>{BANNER}</Text>
+        <Box marginTop={1}>
+          <StepTracker active={3} done={false} />
+        </Box>
+        <Box marginTop={1}>
+          <Text color="gray">{`${agentLabel} · n8n @ ${host}`}</Text>
+        </Box>
+      </Box>
+    );
+    const items: ReactNode[] = [
+      header,
+      ...events.map((e, i) => (
+        <Box key={i} paddingX={2}>
+          {eventLine(e)}
+        </Box>
+      )),
+    ];
     return (
       <Box flexDirection="column">
-        {/* Finished turns scroll into the terminal's scrollback (no re-render → no flash). */}
-        <Static items={events}>{(e, i) => <Box key={i} paddingX={2}>{eventLine(e)}</Box>}</Static>
-        {/* Live region: fills the screen so the input + hint sit at the bottom. */}
-        <Box flexDirection="column" height={rows} paddingX={2}>
-          <Box flexGrow={1} flexDirection="column">
-            {live && live.text.trim() ? (
-              <Box>{eventLine(live.kind === 'thinking' ? { type: 'thinking', text: live.text } : { type: 'text', text: live.text })}</Box>
-            ) : null}
-          </Box>
-          <Box>
-            {stage === 'demoRunning' ? (
-              <Spinner label="Working…" />
-            ) : (
-              <Box>
-                <Text bold color={BLUE}>You › </Text>
-                <TextInput
-                  placeholder="Reply, or press esc to finish"
-                  onSubmit={(v) => {
-                    const msg = v.trim();
-                    if (!msg) return;
-                    setContinueSession(true);
-                    setDemoPrompt(msg);
-                    setStage('demoRunning');
-                  }}
-                />
-              </Box>
-            )}
-          </Box>
-          <Box>
-            <Text color="gray">{hint()}</Text>
-          </Box>
+        <Static items={items}>{(item) => item}</Static>
+        {live && live.text.trim() ? (
+          <Box paddingX={2}>{eventLine(live.kind === 'thinking' ? { type: 'thinking', text: live.text } : { type: 'text', text: live.text })}</Box>
+        ) : null}
+        <Box paddingX={2} marginTop={1}>
+          {stage === 'demoRunning' ? (
+            <Spinner label="Working…" />
+          ) : (
+            <Box>
+              <Text color={BLUE} bold>❯ </Text>
+              <TextInput
+                placeholder="Reply, or press esc to finish"
+                onSubmit={(v) => {
+                  const msg = v.trim();
+                  if (!msg) return;
+                  setContinueSession(true);
+                  setDemoPrompt(msg);
+                  setStage('demoRunning');
+                }}
+              />
+            </Box>
+          )}
+        </Box>
+        <Box paddingX={2}>
+          <Text color="gray">{hint()}</Text>
         </Box>
       </Box>
     );
@@ -748,8 +766,8 @@ function eventLine(e: DemoEvent): ReactNode {
     case 'prompt':
       return (
         <Box marginTop={1}>
-          <Text bold color={BLUE}>You › </Text>
-          <Text color="white">{e.text}</Text>
+          <Text color={BLUE} bold>❯ </Text>
+          <Text color="white" bold>{e.text}</Text>
         </Box>
       );
     case 'tool':
