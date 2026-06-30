@@ -1,0 +1,32 @@
+src/lib/demo/run.ts
+  s_8e2411d05aa826::t_ecab083cc92910 143
+src/cli.tsx
+  s_8e2411d05aa826::t_2def17ac6d2866 49,61-65,116,121
+README.md
+  s_8e2411d05aa826::t_4d3e9ec0875ee0 1,10,23,39,45-46
+src/lib/clients/jsonc-file.ts
+  s_8e2411d05aa826::t_2ac81910879e18 59
+package.json
+  s_8e2411d05aa826::t_e7629bf41b486f 4
+src/lib/instance.ts
+  s_8e2411d05aa826::t_2817451b9bbd3b 23
+src/ui/app.tsx
+  s_8e2411d05aa826::t_cb224fd2d47816 612
+  s_8e2411d05aa826::t_fbbabc7b4ade09 396-401
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "afb5c3682eb016522828c5d14c64cdf38f760138",
+  "prompts": {},
+  "sessions": {
+    "s_8e2411d05aa826": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "06c0618c-100e-4e3a-9d95-857be67ec177",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "frstavares <filipe.tavares@n8n.io>"
+    }
+  }
+}
