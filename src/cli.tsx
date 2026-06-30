@@ -159,8 +159,8 @@ function reportResults(results: ClientWriteResult[]) {
 function printOnboarding(ok: ClientWriteResult[], authMode: 'api-key' | 'oauth') {
   if (!ok.length) return;
   line();
-  line(`  ${c.bold('Start using it:')}`);
-  for (const r of ok) line(`  ${symbols.dot} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, authMode === 'api-key'))}`);
+  line(`  ${c.bold(authMode === 'oauth' ? 'Sign in to n8n the first time you open each tool:' : 'Ready to use — just start chatting in:')}`);
+  for (const r of ok) line(`  ${symbols.dot} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, true))}`);
 }
 
 function printDemoEvent(e: DemoEvent) {

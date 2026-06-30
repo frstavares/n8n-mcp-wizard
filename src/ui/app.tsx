@@ -404,13 +404,14 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
 
   function buildDoneSummary(): string {
     const ok = results.filter(isConfigured);
-    const out = [`  ${c.green('🎉 Connected.')} ${c.dim(summaryText())}`];
+    const oauth = authMode === 'oauth';
+    const out = [`  ${c.green("🎉 You're connected.")}`];
     if (ok.length) {
-      out.push('', `  ${c.bold('Start using it:')}`);
-      for (const r of ok) out.push(`  ${c.pink('•')} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, authMode === 'api-key'))}`);
+      out.push('', `  ${oauth ? 'Sign in to n8n the first time you open each tool:' : 'Ready to use — just start chatting in:'}`);
+      for (const r of ok) out.push(`  ${c.pink('•')} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, true))}`);
     } else if (checked) {
       const snippet = manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: 'n8n' });
-      out.push('', c.dim(snippet.split('\n').map((l) => '  ' + l).join('\n')));
+      out.push('', `  ${c.yellow('No AI client detected — add the n8n MCP server manually:')}`, c.dim(snippet.split('\n').map((l) => '  ' + l).join('\n')));
     }
     out.push('', `  ${c.dim('Docs:')} https://docs.n8n.io/mcp`);
     return out.join('\n');
@@ -637,21 +638,27 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
         );
       case 'done': {
         const ok = results.filter(isConfigured);
+        const oauth = authMode === 'oauth';
         return (
           <Box flexDirection="column">
-            <Text>
-              <Text color={GREEN}>🎉 You're connected.</Text> <Text color="gray">{summaryText()}</Text>
-            </Text>
+            <Text color={GREEN}>🎉 You're connected.</Text>
             {ok.length ? (
               <Box marginTop={1} flexDirection="column">
-                <Text color="white">Start using it:</Text>
+                <Text color="white">
+                  {oauth ? 'Sign in to n8n the first time you open each tool:' : 'Ready to use — just start chatting in:'}
+                </Text>
                 {ok.map((r) => (
                   <Text key={r.id}>
                     <Text color={PINK}>• </Text>
                     <Text color="white">{r.label}</Text>
-                    <Text color="gray"> — {clientUsage(r.id, authMode === 'api-key')}</Text>
+                    <Text color="gray"> — {clientUsage(r.id, true)}</Text>
                   </Text>
                 ))}
+              </Box>
+            ) : checked ? (
+              <Box marginTop={1} flexDirection="column">
+                <Text color="yellow">No AI client detected — add the n8n MCP server manually:</Text>
+                <Text color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: 'n8n' })}</Text>
               </Box>
             ) : null}
             <Box marginTop={1}>
@@ -693,12 +700,6 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
       default:
         return 'working…';
     }
-  }
-
-  function summaryText(): string {
-    const ok = results.filter(isConfigured).map((r) => r.label);
-    if (ok.length) return `Configured ${ok.join(', ')}.`;
-    return 'No AI client detected — add the n8n MCP server to your tool manually.';
   }
 }
 
