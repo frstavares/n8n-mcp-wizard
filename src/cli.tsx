@@ -160,7 +160,7 @@ function printOnboarding(ok: ClientWriteResult[], authMode: 'api-key' | 'oauth')
   if (!ok.length) return;
   line();
   line(`  ${c.bold('Start using it:')}`);
-  for (const r of ok) line(`  ${symbols.dot} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, authMode))}`);
+  for (const r of ok) line(`  ${symbols.dot} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, authMode === 'api-key'))}`);
 }
 
 function printDemoEvent(e: DemoEvent) {

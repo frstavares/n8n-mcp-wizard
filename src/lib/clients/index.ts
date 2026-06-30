@@ -25,8 +25,9 @@ export function manualSnippet(ctx: WriteContext): string {
  * Onboarding hint shown on the Done step: how to actually start using each
  * configured client (and, in OAuth mode, that first use triggers n8n login).
  */
-export function clientUsage(id: ClientId, authMode: 'api-key' | 'oauth'): string {
-  const login = authMode === 'oauth' ? ' First use opens n8n login in your browser.' : '';
+export function clientUsage(id: ClientId, usedApiKey: boolean): string {
+  // No per-tool login needed when we wrote an API key; OAuth tools log in on first use.
+  const login = usedApiKey ? '' : ' First use opens n8n login in your browser.';
   switch (id) {
     case 'claude-code':
       return `Run \`claude\` and ask: "What can you do with my n8n?"${login}`;

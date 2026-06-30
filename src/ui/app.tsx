@@ -1,4 +1,4 @@
-import React, { useEffect, useState, type ReactNode } from 'react';
+import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Box, Static, Text, render, useApp, useInput } from 'ink';
 import { Spinner, MultiSelect, TextInput } from '@inkjs/ui';
 import { toWizardError, type WizardError } from '../lib/errors.js';
@@ -16,7 +16,7 @@ import {
 import { authorize } from '../lib/auth/oauth.js';
 import { resolveProvider, runDemo, suggestPrompts, type DemoEvent, type DemoProvider } from '../lib/demo/index.js';
 import { c, symbols } from '../lib/util/colors.js';
-import { renderMarkdown, stripMarkdown } from '../lib/util/markdown.js';
+import { stripMarkdown } from '../lib/util/markdown.js';
 
 const PINK = '#FF5C8A';
 const GREEN = '#46D160';
@@ -165,6 +165,9 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   const [demoPrompt, setDemoPrompt] = useState('');
   const [continueSession, setContinueSession] = useState(false);
   const [events, setEvents] = useState<DemoEvent[]>([]);
+  // Live token buffer for the currently-streaming block (kept out of <Static>).
+  const liveRef = useRef<{ kind: 'text' | 'thinking'; text: string } | null>(null);
+  const [live, setLive] = useState<{ kind: 'text' | 'thinking'; text: string } | null>(null);
   const [oauthUrl, setOauthUrl] = useState('');
   const [lines, setLines] = useState<ReactNode[]>([]);
   const [error, setError] = useState<WizardError | null>(null);
@@ -326,6 +329,34 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
       const agent = provider.kind === 'agent-sdk' ? 'Claude Code' : 'n8n MCP (direct)';
       setEvents([{ type: 'header', agent, host }]);
     }
+    liveRef.current = null;
+    setLive(null);
+
+    // Buffer streaming deltas in `live` (a dynamic line); commit finished blocks
+    // and other events into the <Static> transcript.
+    const commitLive = () => {
+      const l = liveRef.current;
+      if (l && l.text.trim()) setEvents((ev) => [...ev, { type: l.kind, text: l.text.trim() }]);
+      liveRef.current = null;
+      setLive(null);
+    };
+    const handle = (e: DemoEvent) => {
+      if (off) return;
+      if (e.type === 'delta') {
+        const cur = liveRef.current;
+        const next = cur && cur.kind === e.kind ? { kind: e.kind, text: cur.text + e.text } : { kind: e.kind, text: e.text };
+        liveRef.current = next;
+        setLive(next);
+        return;
+      }
+      if (e.type === 'flush') {
+        commitLive();
+        return;
+      }
+      commitLive();
+      setEvents((ev) => [...ev, e]);
+    };
+
     (async () => {
       try {
         await runDemo({
@@ -334,7 +365,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
           token: demoToken,
           prompt: demoPrompt,
           continueSession,
-          onEvent: (e) => !off && setEvents((prev) => [...prev, e]),
+          onEvent: handle,
         });
       } catch {
         if (!off) setEvents((prev) => [...prev, { type: 'error', message: 'That turn could not run, but your tools are configured.' }]);
@@ -376,7 +407,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
     const out = [`  ${c.green('🎉 Connected.')} ${c.dim(summaryText())}`];
     if (ok.length) {
       out.push('', `  ${c.bold('Start using it:')}`);
-      for (const r of ok) out.push(`  ${c.pink('•')} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, authMode))}`);
+      for (const r of ok) out.push(`  ${c.pink('•')} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, authMode === 'api-key'))}`);
     } else if (checked) {
       const snippet = manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: 'n8n' });
       out.push('', c.dim(snippet.split('\n').map((l) => '  ' + l).join('\n')));
@@ -403,6 +434,9 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
     return (
       <Box flexDirection="column" paddingX={2} paddingY={1}>
         <Static items={events}>{(e, i) => <Box key={i}>{eventLine(e)}</Box>}</Static>
+        {live && live.text.trim() ? (
+          <Box>{eventLine(live.kind === 'thinking' ? { type: 'thinking', text: live.text } : { type: 'text', text: live.text })}</Box>
+        ) : null}
         <Box marginTop={1}>
           {stage === 'demoRunning' ? (
             <Spinner label="Working…" />
@@ -612,12 +646,11 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
               <Box marginTop={1} flexDirection="column">
                 <Text color="white">Start using it:</Text>
                 {ok.map((r) => (
-                  <Box key={r.id}>
-                    <Text color={PINK}>{'• '}</Text>
-                    <Text>
-                      <Text color="white">{r.label}</Text> <Text color="gray">— {clientUsage(r.id, authMode)}</Text>
-                    </Text>
-                  </Box>
+                  <Text key={r.id}>
+                    <Text color={PINK}>• </Text>
+                    <Text color="white">{r.label}</Text>
+                    <Text color="gray"> — {clientUsage(r.id, authMode === 'api-key')}</Text>
+                  </Text>
                 ))}
               </Box>
             ) : null}
@@ -703,7 +736,7 @@ function eventLine(e: DemoEvent): ReactNode {
     case 'text':
       return <Text color="white">{stripMarkdown(e.text)}</Text>;
     case 'result':
-      return <Box marginTop={1}><Text>{renderMarkdown(e.text)}</Text></Box>;
+      return <Box marginTop={1}><Text color="white">{stripMarkdown(e.text)}</Text></Box>;
     case 'error':
       return <Text color="yellow">{e.message}</Text>;
     default:

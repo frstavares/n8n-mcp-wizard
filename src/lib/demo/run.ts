@@ -18,6 +18,8 @@ export type DemoEvent =
   | { type: 'tool-done'; name: string }
   | { type: 'thinking'; text: string } // the agent's reasoning/narration (rendered dim)
   | { type: 'text'; text: string } // the agent's answer (rendered bright)
+  | { type: 'delta'; kind: 'text' | 'thinking'; text: string } // live token stream (UI buffers it)
+  | { type: 'flush' } // commit the current live block to the transcript
   | { type: 'result'; text: string } // final answer (may be markdown)
   | { type: 'error'; message: string };
 
@@ -71,26 +73,29 @@ async function runAgentSdkDemo(opts: RunDemoOptions): Promise<void> {
         },
         // Allow every n8n MCP tool (and nothing on the local machine) without prompts.
         allowedTools: ['mcp__n8n'],
+        // Token-level streaming of text / thinking / tool calls.
+        includePartialMessages: true,
         ...(opts.continueSession ? { continue: true } : {}),
       },
     });
 
     for await (const msg of response as AsyncIterable<any>) {
-      if (msg?.type === 'assistant') {
-        const content = msg.message?.content;
-        if (Array.isArray(content)) {
-          for (const item of content) {
-            if (item?.type === 'thinking' && typeof item.thinking === 'string' && item.thinking.trim()) {
-              onEvent({ type: 'thinking', text: item.thinking.trim() });
-              streamed = true;
-            } else if (item?.type === 'text' && typeof item.text === 'string' && item.text.trim()) {
-              onEvent({ type: 'text', text: item.text.trim() });
-              streamed = true;
-            } else if (item?.type === 'tool_use' && typeof item.name === 'string') {
-              openTools.push(item.name);
-              onEvent({ type: 'tool', name: prettyToolName(item.name) });
-            }
+      if (msg?.type === 'stream_event') {
+        const ev = msg.event;
+        if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use' && typeof ev.content_block.name === 'string') {
+          openTools.push(ev.content_block.name);
+          onEvent({ type: 'tool', name: prettyToolName(ev.content_block.name) });
+        } else if (ev?.type === 'content_block_delta') {
+          const d = ev.delta;
+          if (d?.type === 'text_delta' && typeof d.text === 'string') {
+            onEvent({ type: 'delta', kind: 'text', text: d.text });
+            streamed = true;
+          } else if (d?.type === 'thinking_delta' && typeof d.thinking === 'string') {
+            onEvent({ type: 'delta', kind: 'thinking', text: d.thinking });
+            streamed = true;
           }
+        } else if (ev?.type === 'content_block_stop') {
+          onEvent({ type: 'flush' });
         }
       } else if (msg?.type === 'user') {
         const content = msg.message?.content;
@@ -103,11 +108,13 @@ async function runAgentSdkDemo(opts: RunDemoOptions): Promise<void> {
           }
         }
       } else if (msg?.type === 'result') {
+        onEvent({ type: 'flush' });
         if (!streamed && msg.subtype === 'success' && typeof msg.result === 'string' && msg.result.trim()) {
           onEvent({ type: 'result', text: msg.result.trim() });
         }
       }
     }
+    onEvent({ type: 'flush' });
   } catch (e) {
     onEvent({ type: 'thinking', text: `Claude Code couldn't run the live build (${errorMessage(e)}).` });
     if (token) {
