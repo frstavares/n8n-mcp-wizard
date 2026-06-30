@@ -1,4 +1,4 @@
-export type ClientId = 'claude-code' | 'cursor' | 'claude-desktop' | 'vscode' | 'codex' | 'zed' | 'claude-web';
+export type ClientId = 'claude-code' | 'cursor' | 'claude-desktop' | 'vscode' | 'codex' | 'zed';
 
 export interface WriteContext {
   mcpUrl: string;

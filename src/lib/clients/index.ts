@@ -1,6 +1,5 @@
 import { claudeCode } from './claude-code.js';
 import { claudeDesktop } from './claude-desktop.js';
-import { claudeWeb } from './claude-web.js';
 import { codex } from './codex.js';
 import { cursor } from './cursor.js';
 import { vscode } from './vscode.js';
@@ -10,7 +9,7 @@ import type { ClientDef, ClientId, ClientWriteResult, WriteContext } from './typ
 export * from './types.js';
 
 /** All supported clients, in display order. */
-export const ALL_CLIENTS: ClientDef[] = [claudeCode, cursor, claudeDesktop, vscode, codex, zed, claudeWeb];
+export const ALL_CLIENTS: ClientDef[] = [claudeCode, cursor, claudeDesktop, vscode, codex, zed];
 
 export function getClient(id: ClientId): ClientDef | undefined {
   return ALL_CLIENTS.find((c) => c.id === id);
@@ -41,8 +40,6 @@ export function clientUsage(id: ClientId, usedApiKey: boolean): string {
       return `Run \`codex\` and ask it about your n8n workflows.${login}`;
     case 'zed':
       return `Restart Zed, open the agent panel, and mention n8n.${login}`;
-    case 'claude-web':
-      return `In claude.ai → Settings → Connectors, add the n8n MCP URL, then chat. (Authorizes in the browser.)`;
   }
 }
 
