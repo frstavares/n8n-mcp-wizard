@@ -304,11 +304,20 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
     if (stage !== 'demoSelect' || !checked) return;
     let off = false;
     (async () => {
-      const [prov, prompts] = await Promise.all([
+      const [base, prompts] = await Promise.all([
         resolveProvider(demoToken).catch(() => ({ kind: 'none' }) as DemoProvider),
         suggestPrompts(checked.url, demoToken).catch(() => []),
       ]);
       if (off) return;
+      // The SDK demo would open its OWN browser OAuth for n8n unless it has a
+      // static credential. Only use it when we wrote an API key (sent as a header);
+      // in browser-OAuth mode, prove the connection with the token we already have.
+      const prov: DemoProvider =
+        base.kind === 'agent-sdk' && authMode !== 'api-key'
+          ? demoToken
+            ? { kind: 'deterministic' }
+            : { kind: 'none' }
+          : base;
       setProvider(prov);
       setSuggestions(prompts);
     })();
@@ -468,28 +477,26 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
         {live && live.text.trim() ? (
           <Box paddingX={2}>{eventLine(live.kind === 'thinking' ? { type: 'thinking', text: live.text } : { type: 'text', text: live.text })}</Box>
         ) : null}
-        <Box paddingX={2} marginTop={1}>
-          {stage === 'demoRunning' ? (
-            <Spinner label="Working…" />
-          ) : (
-            <Box>
-              <Text color={BLUE} bold>❯ </Text>
-              <TextInput
-                placeholder="Reply, or press esc to finish"
-                onSubmit={(v) => {
-                  const msg = v.trim();
-                  if (!msg) return;
-                  setContinueSession(true);
-                  setDemoPrompt(msg);
-                  setStage('demoRunning');
-                }}
-              />
-            </Box>
-          )}
-        </Box>
-        <Box paddingX={2}>
-          <Text color="gray">{hint()}</Text>
-        </Box>
+        {stage === 'demoFollowup' ? (
+          <Box paddingX={2} marginTop={1}>
+            <Text color={BLUE} bold>❯ </Text>
+            <TextInput
+              placeholder="Reply, or press esc to finish"
+              onSubmit={(v) => {
+                const msg = v.trim();
+                if (!msg) return;
+                setContinueSession(true);
+                setDemoPrompt(msg);
+                setStage('demoRunning');
+              }}
+            />
+          </Box>
+        ) : null}
+        {hint() ? (
+          <Box paddingX={2}>
+            <Text color="gray">{hint()}</Text>
+          </Box>
+        ) : null}
       </Box>
     );
   }
