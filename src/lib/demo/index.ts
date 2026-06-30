@@ -19,17 +19,16 @@ export type { DemoEvent, RunDemoOptions } from './run.js';
  * demo is useful from an empty state.
  */
 export const SAMPLE_PROMPTS: { id: string; text: string }[] = [
-  { id: 'build-first', text: 'Build my first workflow: when a Typeform is submitted, post it to Slack.' },
-  { id: 'ideas', text: 'Suggest 3 workflows I could build for my use case.' },
-  { id: 'scheduled', text: 'Create a workflow that emails me a daily summary every morning.' },
+  { id: 'capabilities', text: 'What can I do with my n8n through MCP?' },
+  { id: 'build-simple', text: 'Implement a simple workflow to get me started.' },
+  { id: 'help-create', text: 'Help me create a workflow for my use case.' },
 ];
 
-/** Prompts for users who already have workflows — list / inspect / fix / extend. */
+/** Prompts for users who already have workflows — discover / list / build. */
 export const EXISTING_PROMPTS: { id: string; text: string }[] = [
-  { id: 'list', text: 'List my workflows and show which ones are active.' },
-  { id: 'executions', text: 'Check my latest executions and flag any that failed.' },
-  { id: 'fix', text: 'Find a failing workflow and suggest a fix.' },
-  { id: 'add-alert', text: 'Add Slack error alerts to one of my workflows.' },
+  { id: 'capabilities', text: 'What can I do with my n8n through MCP?' },
+  { id: 'list-summarize', text: 'List my workflows and summarize what each one does.' },
+  { id: 'build-simple', text: 'Implement a simple new workflow for me.' },
 ];
 
 /**

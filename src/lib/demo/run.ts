@@ -18,7 +18,8 @@ export type DemoEvent =
   | { type: 'prompt'; text: string }
   | { type: 'tool'; name: string }
   | { type: 'tool-done'; name: string }
-  | { type: 'text'; text: string }
+  | { type: 'thinking'; text: string } // the agent's reasoning/narration (rendered dim)
+  | { type: 'text'; text: string } // the agent's answer (rendered bright)
   | { type: 'result'; text: string } // final answer (may be markdown)
   | { type: 'error'; message: string };
 
@@ -36,7 +37,7 @@ export interface RunDemoOptions {
   continueSession?: boolean;
 }
 
-const CLI_TIMEOUT_MS = 120_000;
+const CLI_TIMEOUT_MS = 180_000;
 const CLI_LABEL: Record<CliName, string> = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini' };
 
 export async function runDemo(opts: RunDemoOptions): Promise<void> {
@@ -66,8 +67,15 @@ function cliArgs(name: CliName, prompt: string, cont: boolean): string[] {
 async function runCliDemo(name: CliName, opts: RunDemoOptions): Promise<void> {
   const { prompt, onEvent } = opts;
   onEvent({ type: 'prompt', text: prompt });
+  let stderrBuf = '';
   try {
     const subprocess = execa(name, cliArgs(name, prompt, !!opts.continueSession), { timeout: CLI_TIMEOUT_MS, buffer: false, reject: true });
+    if (subprocess.stderr) {
+      subprocess.stderr.setEncoding('utf8');
+      (async () => {
+        for await (const c of subprocess.stderr!) stderrBuf += String(c);
+      })().catch(() => {});
+    }
     const parser = name === 'claude' ? makeClaudeStreamParser(onEvent) : makePlainTextParser(onEvent);
     if (subprocess.stdout) {
       subprocess.stdout.setEncoding('utf8');
@@ -75,10 +83,13 @@ async function runCliDemo(name: CliName, opts: RunDemoOptions): Promise<void> {
     }
     await subprocess;
     parser.flush();
-  } catch {
-    // The CLI errored (e.g. not logged in). Fall back cleanly — no leaked output.
+  } catch (e) {
+    // Surface a short diagnostic so we can see *why* it fell back (timeout, not
+    // logged in, bad flag, …), then fall back cleanly.
+    const why = (stderrBuf.trim().split('\n').pop() || errorMessage(e)).slice(0, 160);
+    onEvent({ type: 'thinking', text: `${CLI_LABEL[name]} couldn't complete the live run (${why}).` });
     if (opts.token) {
-      onEvent({ type: 'text', text: `${CLI_LABEL[name]} isn't ready for a live run — verifying your connection instead…` });
+      onEvent({ type: 'thinking', text: 'Verifying your connection instead…' });
       await runDeterministicDemo(opts);
     } else {
       onEvent({ type: 'result', text: `Setup complete. Open ${CLI_LABEL[name]} and paste a sample prompt to try your n8n MCP server.` });
@@ -107,10 +118,15 @@ function makeClaudeStreamParser(onEvent: (e: DemoEvent) => void) {
         const content = obj.message?.content;
         if (Array.isArray(content)) {
           for (const item of content) {
-            if (item?.type === 'text' && typeof item.text === 'string') {
+            if (item?.type === 'thinking' && typeof item.thinking === 'string') {
+              if (item.thinking.trim()) {
+                onEvent({ type: 'thinking', text: item.thinking.trim() }); // dim reasoning
+                streamed = true;
+              }
+            } else if (item?.type === 'text' && typeof item.text === 'string') {
               assistantText += item.text;
               if (item.text.trim()) {
-                onEvent({ type: 'text', text: item.text.trim() }); // stream the agent's narration live
+                onEvent({ type: 'text', text: item.text.trim() }); // the answer (bright)
                 streamed = true;
               }
             } else if (item?.type === 'tool_use' && typeof item.name === 'string') {

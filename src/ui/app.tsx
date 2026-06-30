@@ -1,5 +1,5 @@
 import React, { useEffect, useState, type ReactNode } from 'react';
-import { Box, Text, render, useApp, useInput } from 'ink';
+import { Box, Static, Text, render, useApp, useInput } from 'ink';
 import { Spinner, MultiSelect, TextInput } from '@inkjs/ui';
 import { toWizardError, type WizardError } from '../lib/errors.js';
 import { checkInstance, ensureValidKey, type CheckedInstance } from '../lib/flow.js';
@@ -25,6 +25,7 @@ const PURPLE = '#C3A6FF';
 
 // Reserved body height so short steps don't collapse the layout.
 const BODY_MIN_HEIGHT = 10;
+const CLI_LABELS = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini' } as const;
 
 interface SelOption {
   label: string;
@@ -314,7 +315,18 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   useEffect(() => {
     if (stage !== 'demoRunning' || !checked) return;
     let off = false;
-    if (!continueSession) setEvents([]); // first turn clears; follow-ups append to the transcript
+    if (!continueSession) {
+      // First turn: seed the transcript with the context (which agent + which instance).
+      const host = (() => {
+        try {
+          return new URL(checked.url).host;
+        } catch {
+          return checked.url;
+        }
+      })();
+      const agent = provider.kind === 'cli' ? CLI_LABELS[provider.name] : 'n8n MCP (direct)';
+      setEvents([{ type: 'thinking', text: `Using ${agent} · n8n @ ${host}` }]);
+    }
     (async () => {
       try {
         await runDemo({
@@ -386,6 +398,38 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   // terminal height — a full-height tree forces Ink to repaint the whole screen on
   // every spinner tick, which flickers. Staying shorter than the terminal lets Ink
   // diff in place (no flashing).
+  // Chat view (build step): full-width scrolling transcript via <Static> so the
+  // committed lines never re-render — typing in the reply box doesn't flash them.
+  if (stage === 'demoRunning' || stage === 'demoFollowup') {
+    return (
+      <Box flexDirection="column" paddingX={2} paddingY={1}>
+        <Static items={events}>{(e, i) => <Box key={i}>{eventLine(e)}</Box>}</Static>
+        <Box marginTop={1}>
+          {stage === 'demoRunning' ? (
+            <Spinner label="Working…" />
+          ) : (
+            <Box>
+              <Text color={BLUE}>› </Text>
+              <TextInput
+                placeholder="Reply, or press esc to finish"
+                onSubmit={(v) => {
+                  const msg = v.trim();
+                  if (!msg) return;
+                  setContinueSession(true);
+                  setDemoPrompt(msg);
+                  setStage('demoRunning');
+                }}
+              />
+            </Box>
+          )}
+        </Box>
+        <Box marginTop={1}>
+          <Text color="gray">{hint()}</Text>
+        </Box>
+      </Box>
+    );
+  }
+
   // Top-aligned (NOT full-height-centered): a full-height flex re-flows the whole
   // screen on every spinner tick → flicker. Top-aligned keeps the tree compact so
   // Ink only repaints what changed. The alt-screen still gives a clean full screen.
@@ -643,8 +687,10 @@ function eventLine(e: DemoEvent): ReactNode {
       return <Text><Text color="gray">↳</Text> <Text color={PURPLE}>{e.name}</Text></Text>;
     case 'tool-done':
       return <Text><Text color="gray">↳</Text> <Text color={PURPLE}>{e.name}</Text> <Text color={GREEN}>✓</Text></Text>;
+    case 'thinking':
+      return <Text color="gray" dimColor>{stripMarkdown(e.text)}</Text>;
     case 'text':
-      return <Text color="gray">{stripMarkdown(e.text)}</Text>;
+      return <Text color="white">{stripMarkdown(e.text)}</Text>;
     case 'result':
       return <Box marginTop={1}><Text>{renderMarkdown(e.text)}</Text></Box>;
     case 'error':
