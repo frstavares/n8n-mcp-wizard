@@ -31,6 +31,15 @@ export function vscodeConfigPath(): string {
   });
 }
 
+/** Zed settings (no official Windows build). */
+export function zedConfigPath(): string {
+  return pick({
+    darwin: join(home, '.config', 'zed', 'settings.json'),
+    win32: join(APPDATA, 'Zed', 'settings.json'),
+    linux: join(XDG, 'zed', 'settings.json'),
+  });
+}
+
 /** Claude Desktop config (no official Linux build). */
 export function claudeDesktopConfigPath(): string {
   return pick({

@@ -141,7 +141,8 @@ async function resolveTargets(opts: Options): Promise<ClientDef[]> {
       return def;
     });
   }
-  return detectClients();
+  // Auto-configure detected clients, but not opt-in browser connectors (claude.ai).
+  return (await detectClients()).filter((d) => d.autoSelect !== false);
 }
 
 function reportResults(results: ClientWriteResult[]) {

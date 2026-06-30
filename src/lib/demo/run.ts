@@ -15,6 +15,7 @@ import { listTools, type McpTool } from '../mcp-client.js';
 import type { CliName, DemoProvider } from './resolver.js';
 
 export type DemoEvent =
+  | { type: 'header'; agent: string; host: string } // chat header (seeded by the UI)
   | { type: 'prompt'; text: string }
   | { type: 'tool'; name: string }
   | { type: 'tool-done'; name: string }

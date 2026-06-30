@@ -1,4 +1,4 @@
-export type ClientId = 'claude-code' | 'cursor' | 'claude-desktop' | 'vscode';
+export type ClientId = 'claude-code' | 'cursor' | 'claude-desktop' | 'vscode' | 'codex' | 'zed' | 'claude-web';
 
 export interface WriteContext {
   mcpUrl: string;
@@ -24,7 +24,9 @@ export interface ClientWriteResult {
 export interface ClientDef {
   id: ClientId;
   label: string;
-  /** True if the client appears installed on this machine. */
+  /** Pre-checked by default? Browser connectors (claude.ai) are offered but opt-in. */
+  autoSelect?: boolean;
+  /** True if the client appears installed / available on this machine. */
   detect(): Promise<boolean>;
   write(ctx: WriteContext, opts?: { overwrite?: boolean }): Promise<ClientWriteResult>;
   /** A copy-paste config snippet the user can apply by hand. */

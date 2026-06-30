@@ -325,7 +325,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
         }
       })();
       const agent = provider.kind === 'cli' ? CLI_LABELS[provider.name] : 'n8n MCP (direct)';
-      setEvents([{ type: 'thinking', text: `Using ${agent} · n8n @ ${host}` }]);
+      setEvents([{ type: 'header', agent, host }]);
     }
     (async () => {
       try {
@@ -545,7 +545,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
             <Box marginTop={1}>
               <MultiSelect
                 options={detected.map((d) => ({ label: d.label, value: d.id }))}
-                defaultValue={detected.map((d) => d.id)}
+                defaultValue={detected.filter((d) => d.autoSelect !== false).map((d) => d.id)}
                 onSubmit={(values) => {
                   const chosen = detected.filter((d) => values.includes(d.id));
                   setDetected(chosen.length ? chosen : detected);
@@ -681,6 +681,18 @@ function resultLine(r: ClientWriteResult): ReactNode {
 
 function eventLine(e: DemoEvent): ReactNode {
   switch (e.type) {
+    case 'header':
+      return (
+        <Box flexDirection="column">
+          <Text>
+            <Text color={PINK}>◆ n8n</Text> <Text color="gray">· build · your first automation</Text>
+          </Text>
+          <Text color="gray">
+            {e.agent} · {e.host}
+          </Text>
+          <Text color="gray">────────────────────────────────────</Text>
+        </Box>
+      );
     case 'prompt':
       return <Text><Text color={BLUE}>›</Text> <Text color="white">"{e.text}"</Text></Text>;
     case 'tool':
