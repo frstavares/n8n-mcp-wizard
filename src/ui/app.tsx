@@ -363,8 +363,8 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
     (async () => {
       try {
         if (detected.length === 0) {
-          addLine(<Text key="nc" color="yellow">No supported AI client detected.</Text>);
-          addLine(<Text key="man" color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey })}</Text>);
+          // The manual config snippet is shown on the Done screen — don't duplicate it here.
+          addLine(<Text key="nc" color="yellow">No supported AI client detected — I'll show the manual setup at the end.</Text>);
           setTimeout(() => !off && goto(demo ? 'demoSelect' : 'done'), 1500);
           return;
         }
@@ -839,9 +839,9 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScree
       case 'selectClients':
         return '↑↓ move · space toggle · enter confirm';
       case 'demoSelect':
-        return introTyped ? '↑↓ move · enter select' : 'press any key to skip the intro';
+        return introTyped ? '↑↓ move · enter select' : 'press any key to skip typing';
       case 'demoPrompts':
-        return promptsTyped ? '↑↓ move · enter run' : 'press any key to skip the intro';
+        return promptsTyped ? '↑↓ move · enter run' : 'press any key to skip typing';
       case 'demoRunning':
         return ''; // the spinner already says "Working…"
       case 'demoFollowup':

@@ -49,6 +49,7 @@ async function rpc(
   body: object,
   fetchImpl: FetchLike,
   sessionId?: string,
+  timeoutMs = 15_000,
 ): Promise<{ res: Response; json: JsonRpcResponse; sessionId?: string }> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
@@ -56,9 +57,25 @@ async function rpc(
   };
   if (token) headers.authorization = `Bearer ${token}`;
   if (sessionId) headers['mcp-session-id'] = sessionId;
-  const res = await fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  // Never let an unresponsive MCP server hang the wizard.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
   const json = res.ok ? await parseBody(res) : {};
   return { res, json, sessionId: res.headers.get('mcp-session-id') ?? sessionId };
+}
+
+/** Throw a clear, user-facing error when the MCP server rejects us or errors. */
+function assertOk(res: Response): void {
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(`your n8n sign-in was rejected (${res.status}) — it may have expired`);
+  }
+  if (!res.ok) throw new Error(`the server returned ${res.status}`);
 }
 
 export interface ValidateResult {
@@ -106,7 +123,8 @@ export async function initialize(
   fetchImpl: FetchLike,
 ): Promise<string | undefined> {
   const url = mcpServerUrl(instanceBaseUrl);
-  const { sessionId } = await rpc(url, token, initializeMessage(), fetchImpl);
+  const { res, sessionId } = await rpc(url, token, initializeMessage(), fetchImpl);
+  assertOk(res); // surface auth/server errors instead of masking them as "no tools"
   // Best-effort: tell the server we're initialized.
   await rpc(url, token, { jsonrpc: '2.0', method: 'notifications/initialized' }, fetchImpl, sessionId).catch(
     () => undefined,
@@ -122,7 +140,8 @@ export async function listTools(
   const fetchImpl = opts.fetchImpl ?? (globalThis.fetch as FetchLike);
   const url = mcpServerUrl(instanceBaseUrl);
   const sessionId = await initialize(instanceBaseUrl, token, fetchImpl);
-  const { json } = await rpc(url, token, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, fetchImpl, sessionId);
+  const { res, json } = await rpc(url, token, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, fetchImpl, sessionId);
+  assertOk(res);
   const tools = json.result?.tools;
   return Array.isArray(tools) ? tools.map((t: any) => ({ name: t.name, description: t.description })) : [];
 }

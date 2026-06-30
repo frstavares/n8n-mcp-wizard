@@ -153,6 +153,20 @@ describe('listTools', () => {
     expect(tools).toEqual([]);
   });
 
+  it('throws (not silently empty) when the server rejects the credential', async () => {
+    for (const status of [401, 403]) {
+      const fetchImpl: FetchLike = async () => new Response(null, { status });
+      await expect(listTools(BASE, TOKEN, { fetchImpl })).rejects.toThrow(String(status));
+    }
+  });
+
+  it('propagates a failed request instead of returning empty (so the demo can report it)', async () => {
+    const fetchImpl: FetchLike = async () => {
+      throw new Error('network down');
+    };
+    await expect(listTools(BASE, TOKEN, { fetchImpl })).rejects.toThrow('network down');
+  });
+
   it('propagates the session id from initialize into the tools/list call', async () => {
     let toolsListSessionId: string | null | undefined;
     const fetchImpl: FetchLike = async (_url, init) => {

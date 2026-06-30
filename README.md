@@ -15,7 +15,7 @@ npx @n8n/mcp-wizard acme.app.n8n.cloud
 1. **Verifies** your instance is reachable and that the MCP server is enabled.
 2. **Authenticates** once — paste an API key (written into every tool, no copy-paste) or use per-tool browser OAuth.
 3. **Configures all your AI clients** at once: Claude Code, Cursor, Claude Desktop, VS Code, Codex, Zed.
-4. **Shows you what's possible** — sample prompts to send your first message.
+4. **Shows you what's possible** — types out what your AI tools can do, then (if you want) runs a real prompt against your instance to prove the connection.
 
 ## Usage
 
@@ -59,7 +59,7 @@ npx @n8n/mcp-wizard remove --client cursor # just one
 
 ## Status
 
-Early beta. Working today: instance checks, API-key auth + validation, config writers for the four clients, the discovery/sample-prompt step, and full error handling (MCP-not-enabled, unreachable, no clients detected, per-client write failures). In progress: the full-screen interactive TUI, browser OAuth, and the live LLM-driven demo. Telemetry is planned but not yet shipped.
+Early beta. Working today: the interactive TUI, instance checks, both auth modes (browser OAuth and API-key, with validation), config writers for all six clients (Claude Code, Cursor, Claude Desktop, VS Code, Codex, Zed) plus a prefix-aware uninstall, the typed-out discovery step with an opt-in live demo that proves the connection against your instance, and full error handling (MCP-not-enabled, unreachable, no clients detected, per-client write failures). The Claude-driven demo (Claude actually building a workflow) is intentionally not auto-run: the Agent SDK opens its own n8n login, which would mean a second sign-in. Telemetry is planned but not yet shipped.
 
 ## Develop
 

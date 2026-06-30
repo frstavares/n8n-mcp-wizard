@@ -147,7 +147,7 @@ async function runDeterministicDemo(opts: RunDemoOptions): Promise<void> {
     const list = opts.listToolsImpl ?? listTools;
     tools = await list(instanceBaseUrl, token, { fetchImpl });
   } catch (e) {
-    onEvent({ type: 'error', message: `Could not reach the n8n MCP server: ${errorMessage(e)}` });
+    onEvent({ type: 'error', message: `Demo couldn't query your n8n MCP server — ${errorMessage(e)}.` });
     return;
   }
 
