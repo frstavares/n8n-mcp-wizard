@@ -4,6 +4,7 @@ import { Spinner, MultiSelect, TextInput } from '@inkjs/ui';
 import { toWizardError, type WizardError } from '../lib/errors.js';
 import { checkInstance, ensureValidKey, type CheckedInstance } from '../lib/flow.js';
 import {
+  ALL_CLIENTS,
   clientUsage,
   configureClients,
   detectClients,
@@ -161,6 +162,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   const [demoToken, setDemoToken] = useState<string | undefined>(apiKeyArg);
   const [authMode, setAuthMode] = useState<'api-key' | 'oauth'>(apiKeyArg ? 'api-key' : 'oauth');
   const [detected, setDetected] = useState<ClientDef[]>([]);
+  const [installed, setInstalled] = useState<ClientDef[]>([]);
   const [results, setResults] = useState<ClientWriteResult[]>([]);
   const [suggestions, setSuggestions] = useState<{ id: string; text: string }[]>([]);
   const [provider, setProvider] = useState<DemoProvider>({ kind: 'none' });
@@ -260,8 +262,10 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
         }
         const found = await detectClients();
         if (off) return;
-        setDetected(found);
-        goto(found.length ? 'selectClients' : 'configuring');
+        setInstalled(found);
+        // Always show the picker with ALL clients — detected ones pre-checked, the
+        // rest available (so detection misses / not-yet-installed tools aren't hidden).
+        goto('selectClients');
       } catch (e) {
         if (!off) fail(e);
       }
@@ -580,23 +584,28 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
             </Box>
           </Box>
         );
-      case 'selectClients':
+      case 'selectClients': {
+        const installedIds = new Set(installed.map((d) => d.id));
         return (
           <Box flexDirection="column">
             <Text color="white">Which clients should I configure?</Text>
+            <Text color="gray">Detected ones are pre-selected; pick others to set them up too.</Text>
             <Box marginTop={1}>
               <MultiSelect
-                options={detected.map((d) => ({ label: d.label, value: d.id }))}
-                defaultValue={detected.filter((d) => d.autoSelect !== false).map((d) => d.id)}
+                options={ALL_CLIENTS.map((d) => ({
+                  label: installedIds.has(d.id) ? d.label : `${d.label} (not detected)`,
+                  value: d.id,
+                }))}
+                defaultValue={installed.filter((d) => d.autoSelect !== false).map((d) => d.id)}
                 onSubmit={(values) => {
-                  const chosen = detected.filter((d) => values.includes(d.id));
-                  setDetected(chosen.length ? chosen : detected);
+                  setDetected(ALL_CLIENTS.filter((d) => values.includes(d.id)));
                   goto('configuring');
                 }}
               />
             </Box>
           </Box>
         );
+      }
       case 'demoSelect':
         if (!suggestions.length) return <Spinner label="Setting up your first message…" />;
         return (
