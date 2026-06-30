@@ -1,0 +1,21 @@
+src/lib/clients/types.ts
+  s_10154009c3b2f1::t_87d585fecd72d1 1
+src/lib/clients/index.ts
+  s_10154009c3b2f1::t_6a0dbd1ebb296a 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1ac28e05e99dfec234123ead5f60082919f41221",
+  "prompts": {},
+  "sessions": {
+    "s_10154009c3b2f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ce5eadc-732a-41fc-9d55-99174270bdb0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "frstavares <filipe.tavares@n8n.io>"
+    }
+  }
+}
