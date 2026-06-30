@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Box, Static, Text, render, useApp, useInput } from 'ink';
+import { Box, Static, Text, render, useApp, useInput, useStdout } from 'ink';
 import { Spinner, MultiSelect, TextInput } from '@inkjs/ui';
 import { toWizardError, type WizardError } from '../lib/errors.js';
 import { checkInstance, ensureValidKey, type CheckedInstance } from '../lib/flow.js';
@@ -151,6 +151,8 @@ interface AppProps {
 
 export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps) {
   const { exit } = useApp();
+  const { stdout } = useStdout();
+  const rows = Math.max(12, (stdout?.rows ?? 24) - 1);
 
   const [stage, setStage] = useState<Stage>(initialUrl ? 'connecting' : 'askUrl');
   const [url, setUrl] = useState(initialUrl);
@@ -433,32 +435,38 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   // committed lines never re-render — typing in the reply box doesn't flash them.
   if (stage === 'demoRunning' || stage === 'demoFollowup') {
     return (
-      <Box flexDirection="column" paddingX={2} paddingY={1}>
-        <Static items={events}>{(e, i) => <Box key={i}>{eventLine(e)}</Box>}</Static>
-        {live && live.text.trim() ? (
-          <Box>{eventLine(live.kind === 'thinking' ? { type: 'thinking', text: live.text } : { type: 'text', text: live.text })}</Box>
-        ) : null}
-        <Box marginTop={1}>
-          {stage === 'demoRunning' ? (
-            <Spinner label="Working…" />
-          ) : (
-            <Box>
-              <Text color={BLUE}>› </Text>
-              <TextInput
-                placeholder="Reply, or press esc to finish"
-                onSubmit={(v) => {
-                  const msg = v.trim();
-                  if (!msg) return;
-                  setContinueSession(true);
-                  setDemoPrompt(msg);
-                  setStage('demoRunning');
-                }}
-              />
-            </Box>
-          )}
-        </Box>
-        <Box marginTop={1}>
-          <Text color="gray">{hint()}</Text>
+      <Box flexDirection="column">
+        {/* Finished turns scroll into the terminal's scrollback (no re-render → no flash). */}
+        <Static items={events}>{(e, i) => <Box key={i} paddingX={2}>{eventLine(e)}</Box>}</Static>
+        {/* Live region: fills the screen so the input + hint sit at the bottom. */}
+        <Box flexDirection="column" height={rows} paddingX={2}>
+          <Box flexGrow={1} flexDirection="column">
+            {live && live.text.trim() ? (
+              <Box>{eventLine(live.kind === 'thinking' ? { type: 'thinking', text: live.text } : { type: 'text', text: live.text })}</Box>
+            ) : null}
+          </Box>
+          <Box>
+            {stage === 'demoRunning' ? (
+              <Spinner label="Working…" />
+            ) : (
+              <Box>
+                <Text bold color={BLUE}>You › </Text>
+                <TextInput
+                  placeholder="Reply, or press esc to finish"
+                  onSubmit={(v) => {
+                    const msg = v.trim();
+                    if (!msg) return;
+                    setContinueSession(true);
+                    setDemoPrompt(msg);
+                    setStage('demoRunning');
+                  }}
+                />
+              </Box>
+            )}
+          </Box>
+          <Box>
+            <Text color="gray">{hint()}</Text>
+          </Box>
         </Box>
       </Box>
     );
@@ -691,6 +699,8 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
         return '↑↓ move · space toggle · enter confirm';
       case 'demoSelect':
         return '↑↓ move · enter run';
+      case 'demoRunning':
+        return ''; // the spinner already says "Working…"
       case 'demoFollowup':
         return 'type a reply · enter · esc to finish';
       case 'done':
@@ -727,7 +737,12 @@ function eventLine(e: DemoEvent): ReactNode {
         </Box>
       );
     case 'prompt':
-      return <Text><Text color={BLUE}>›</Text> <Text color="white">"{e.text}"</Text></Text>;
+      return (
+        <Box marginTop={1}>
+          <Text bold color={BLUE}>You › </Text>
+          <Text color="white">{e.text}</Text>
+        </Box>
+      );
     case 'tool':
       return <Text><Text color="gray">↳</Text> <Text color={PURPLE}>{e.name}</Text></Text>;
     case 'tool-done':
