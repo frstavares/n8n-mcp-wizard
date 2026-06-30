@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { cursorConfigPath } from './paths.js';
-import { upsertJson } from './jsonc-file.js';
+import { removeJson, upsertJson } from './jsonc-file.js';
 import { httpServerConfig } from './server-config.js';
 import { DEFAULT_SERVER_KEY, type ClientDef, type ClientWriteResult, type WriteContext } from './types.js';
 
@@ -39,6 +39,16 @@ export const cursor: ClientDef = {
         error: e instanceof Error ? e.message : String(e),
         manual: this.manualHint(ctx),
       };
+    }
+  },
+
+  async remove(serverKey): Promise<ClientWriteResult> {
+    const key = serverKey ?? DEFAULT_SERVER_KEY;
+    try {
+      const { removed } = await removeJson(cursorConfigPath(), ['mcpServers', key]);
+      return { id: 'cursor', label: 'Cursor', ok: removed, detail: removed ? 'removed' : 'not configured' };
+    } catch (e) {
+      return { id: 'cursor', label: 'Cursor', ok: false, error: e instanceof Error ? e.message : String(e) };
     }
   },
 

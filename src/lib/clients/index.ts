@@ -76,3 +76,16 @@ export async function configureClients(
   }
   return out;
 }
+
+/** Remove the n8n MCP server from each client (uninstall). One failure never aborts the rest. */
+export async function removeFromClients(clients: ClientDef[], serverKey?: string): Promise<ClientWriteResult[]> {
+  const out: ClientWriteResult[] = [];
+  for (const client of clients) {
+    try {
+      out.push(await client.remove(serverKey));
+    } catch (e) {
+      out.push({ id: client.id, label: client.label, ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return out;
+}

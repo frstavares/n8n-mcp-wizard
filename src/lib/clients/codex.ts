@@ -38,6 +38,19 @@ export const codex: ClientDef = {
     }
   },
 
+  async remove(serverKey): Promise<ClientWriteResult> {
+    const key = serverKey ?? DEFAULT_SERVER_KEY;
+    try {
+      await execa('codex', ['mcp', 'remove', key]);
+      return { id: 'codex', label: 'Codex', ok: true, detail: 'removed' };
+    } catch (e: any) {
+      const notFound = /not found|no .*server|does not exist/i.test(typeof e?.stderr === 'string' ? e.stderr : '');
+      return notFound
+        ? { id: 'codex', label: 'Codex', ok: false, detail: 'not configured' }
+        : { id: 'codex', label: 'Codex', ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+
   manualHint(ctx) {
     return `Run:\n  codex ${codexArgs(ctx).join(' ')}`;
   },

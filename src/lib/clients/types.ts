@@ -29,6 +29,8 @@ export interface ClientDef {
   /** True if the client appears installed / available on this machine. */
   detect(): Promise<boolean>;
   write(ctx: WriteContext, opts?: { overwrite?: boolean }): Promise<ClientWriteResult>;
+  /** Remove the n8n MCP server entry from this client (uninstall). */
+  remove(serverKey?: string): Promise<ClientWriteResult>;
   /** A copy-paste config snippet the user can apply by hand. */
   manualHint(ctx: WriteContext): string;
 }

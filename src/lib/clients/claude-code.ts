@@ -40,6 +40,19 @@ export const claudeCode: ClientDef = {
     }
   },
 
+  async remove(serverKey): Promise<ClientWriteResult> {
+    const key = serverKey ?? DEFAULT_SERVER_KEY;
+    try {
+      await execa('claude', ['mcp', 'remove', '--scope', 'user', key]);
+      return { id: 'claude-code', label: 'Claude Code', ok: true, detail: 'removed' };
+    } catch (e: any) {
+      const notFound = /not found|no .*server|does not exist/i.test(typeof e?.stderr === 'string' ? e.stderr : '');
+      return notFound
+        ? { id: 'claude-code', label: 'Claude Code', ok: false, detail: 'not configured' }
+        : { id: 'claude-code', label: 'Claude Code', ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+
   manualHint(ctx) {
     return `Run:\n  claude ${claudeArgs(ctx).join(' ')}`;
   },

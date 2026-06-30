@@ -14,7 +14,7 @@ npx @n8n/mcp acme.app.n8n.cloud
 
 1. **Verifies** your instance is reachable and that the MCP server is enabled.
 2. **Authenticates** once — paste an API key (written into every tool, no copy-paste) or use per-tool browser OAuth.
-3. **Configures all your AI clients** at once: Claude Code, Cursor, Claude Desktop, VS Code.
+3. **Configures all your AI clients** at once: Claude Code, Cursor, Claude Desktop, VS Code, Codex, Zed.
 4. **Shows you what's possible** — sample prompts to send your first message.
 
 ## Usage
@@ -27,7 +27,7 @@ Arguments:
 
 Options:
   --api-key <key>      MCP API key — written as Bearer into every client config
-  --client <ids...>    only configure these (claude-code, cursor, claude-desktop, vscode)
+  --client <ids...>    only configure these (claude-code, cursor, claude-desktop, vscode, codex, zed)
   -y, --yes            accept defaults, no prompts (CI / scripted)
   --no-demo            skip the first-message demo
   -h, --help           show help
@@ -37,6 +37,13 @@ Options:
 
 ```bash
 npx @n8n/mcp https://acme.app.n8n.cloud --api-key "$N8N_MCP_KEY" --yes
+```
+
+**Uninstall** — remove the n8n MCP server from your tools:
+
+```bash
+npx @n8n/mcp remove                 # all detected tools
+npx @n8n/mcp remove --client cursor # just one
 ```
 
 ## Requirements

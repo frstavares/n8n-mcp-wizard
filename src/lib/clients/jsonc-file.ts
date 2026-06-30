@@ -51,3 +51,15 @@ export async function upsertJson(
   await writeFile(path, next, 'utf8');
   return { existed, written: true };
 }
+
+/** Remove a key at a JSON(C) path, preserving the rest. No-op if absent or file missing. */
+export async function removeJson(path: string, jsonPath: (string | number)[]): Promise<{ removed: boolean }> {
+  const text = await readTextOrEmpty(path);
+  if (!text.trim()) return { removed: false };
+  const errors: ParseError[] = [];
+  const parsed = parse(text, errors, { allowTrailingComma: true }) ?? {};
+  if (getAtPath(parsed, jsonPath) === undefined) return { removed: false };
+  const edits = modify(text, jsonPath, undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } });
+  await writeFile(path, applyEdits(text, edits), 'utf8');
+  return { removed: true };
+}

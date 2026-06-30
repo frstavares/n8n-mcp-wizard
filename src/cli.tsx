@@ -9,6 +9,7 @@ import {
   detectClients,
   getClient,
   manualSnippet,
+  removeFromClients,
   type ClientDef,
   type ClientId,
   type ClientWriteResult,
@@ -60,13 +61,45 @@ Examples:
   npx @n8n/mcp acme.app.n8n.cloud               start from your instance URL
   npx @n8n/mcp acme.app.n8n.cloud --api-key K   non-interactive (every tool works at once)
   npx @n8n/mcp <url> --client cursor claude-code   only these tools
+  npx @n8n/mcp remove                           uninstall the n8n MCP server from your tools
 `,
     )
     .action((url, opts) => run(url, opts as Options));
+
   await program.parseAsync();
 }
 
+async function runRemove(clientIds?: string[]) {
+  line();
+  line(BANNER);
+  line();
+  const targets = clientIds?.length
+    ? clientIds.map((id) => {
+        const def = getClient(id as ClientId);
+        if (!def) throw new WizardError('MISSING_INPUT', `Unknown client "${id}".`, { suggestion: `Valid: ${ALL_CLIENTS.map((x) => x.id).join(', ')}` });
+        return def;
+      })
+    : await detectClients();
+  if (!targets.length) {
+    line(`  ${c.yellow('No AI clients detected.')}`);
+    line();
+    return;
+  }
+  line(`  ${c.dim('Removing the n8n MCP server…')}`);
+  const results = await removeFromClients(targets);
+  for (const r of results) {
+    if (r.ok) line(`  ${symbols.ok} ${pad(r.label, 16)}${c.dim(r.detail ?? 'removed')}`);
+    else if (r.detail === 'not configured') line(`  ${c.gray('○')} ${pad(r.label, 16)}${c.dim('not configured')}`);
+    else line(`  ${symbols.fail} ${pad(r.label, 16)}${c.dim(r.error ?? 'failed')}`);
+  }
+  line();
+}
+
 async function run(urlArg: string | undefined, opts: Options) {
+  if (urlArg === 'remove') {
+    await runRemove(opts.client);
+    return;
+  }
   if (isInteractive(opts)) {
     // The TUI asks for the URL itself (first Connect step) when not provided.
     const code = await runInk({ initialUrl: urlArg ?? '', apiKeyArg: opts.apiKey, clientIds: opts.client, demo: opts.demo });
