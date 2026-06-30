@@ -4,7 +4,7 @@ Connect your n8n instance to your AI tools in **one command** — and start buil
 
 ```bash
 # Beta (runs straight from this repo, no install):
-npx github:frstavares/n8n-mcp acme.app.n8n.cloud
+npx github:frstavares/n8n-mcp-wizard acme.app.n8n.cloud
 
 # Future (npm):
 npx @n8n/mcp acme.app.n8n.cloud
