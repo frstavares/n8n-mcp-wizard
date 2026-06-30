@@ -1,11 +1,15 @@
 /**
  * Runs the "first message" demo and streams structured events back via `onEvent`.
  *
- *  - deterministic  no LLM — prove the MCP connection by running the user's
- *                   prompt against their n8n and listing the available tools.
- *  - none           no usable credential; tell the user what to do next.
+ *  - agent-sdk  Drive the user's OWN local Claude Code against their n8n MCP
+ *               server, so the demo actually answers using the tools. Runs on the
+ *               user's Claude (their login, their usage). Streams the response.
+ *  - none       no Claude Code → caller skips the demo entirely.
+ *
+ * If the agent run fails, we fall back to a quick deterministic connection check.
  */
 import { listTools, type McpTool } from '../mcp-client.js';
+import { mcpServerUrl } from '../instance.js';
 import type { DemoProvider } from './resolver.js';
 
 export type DemoEvent =
@@ -34,6 +38,8 @@ export interface RunDemoOptions {
 
 export async function runDemo(opts: RunDemoOptions): Promise<void> {
   switch (opts.provider.kind) {
+    case 'agent-sdk':
+      return runAgentSdkDemo(opts);
     case 'deterministic':
       return runDeterministicDemo(opts);
     case 'none':
@@ -41,29 +47,82 @@ export async function runDemo(opts: RunDemoOptions): Promise<void> {
   }
 }
 
+/** Drive the user's local Claude Code against their n8n MCP server, streaming the reply. */
+async function runAgentSdkDemo(opts: RunDemoOptions): Promise<void> {
+  const { instanceBaseUrl, token, prompt, onEvent } = opts;
+  onEvent({ type: 'prompt', text: prompt });
+
+  const openTools: string[] = [];
+  let streamed = false;
+  try {
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+    const response = query({
+      prompt,
+      options: {
+        mcpServers: {
+          n8n: {
+            type: 'http',
+            url: mcpServerUrl(instanceBaseUrl),
+            ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+          },
+        },
+        allowedTools: ['mcp__n8n'], // pre-approve the n8n tools so the demo doesn't prompt
+        includePartialMessages: true,
+      },
+    });
+
+    for await (const msg of response as AsyncIterable<any>) {
+      if (msg.type === 'stream_event') {
+        const ev = msg.event;
+        if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use' && typeof ev.content_block.name === 'string') {
+          openTools.push(ev.content_block.name);
+          onEvent({ type: 'tool', name: prettyToolName(ev.content_block.name) });
+        } else if (ev?.type === 'content_block_delta') {
+          const d = ev.delta;
+          if (d?.type === 'text_delta' && typeof d.text === 'string') {
+            onEvent({ type: 'delta', kind: 'text', text: d.text });
+            streamed = true;
+          }
+        } else if (ev?.type === 'content_block_stop') {
+          const name = openTools.shift();
+          if (name) onEvent({ type: 'tool-done', name: prettyToolName(name) });
+          else onEvent({ type: 'flush' });
+        }
+      } else if (msg.type === 'result') {
+        if (!streamed && msg.subtype === 'success' && typeof msg.result === 'string' && msg.result.trim()) {
+          onEvent({ type: 'result', text: msg.result.trim() });
+        }
+        onEvent({ type: 'flush' });
+      }
+    }
+  } catch (e) {
+    onEvent({ type: 'thinking', text: `Claude couldn't run the live demo (${errorMessage(e)}). Checking the connection instead…` });
+    if (token) await runDeterministicDemo(opts, false); // prompt already emitted above
+  }
+}
+
+/** Pretty-print an MCP tool id: `mcp__n8n__search_workflows` → `search_workflows`. */
+function prettyToolName(name: string): string {
+  return name.replace(/^mcp__[^_]+__/, '');
+}
+
 const DETERMINISTIC_PROMPT = 'What can you do with my n8n instance?';
 
-async function runDeterministicDemo(opts: RunDemoOptions): Promise<void> {
+/** No-LLM fallback: prove the MCP connection and list the available tools. */
+async function runDeterministicDemo(opts: RunDemoOptions, emitPrompt = true): Promise<void> {
   const { instanceBaseUrl, token, onEvent, fetchImpl } = opts;
+  if (emitPrompt) onEvent({ type: 'prompt', text: opts.prompt?.trim() || DETERMINISTIC_PROMPT });
   if (!token) {
     onEvent({ type: 'error', message: 'No token available for the connection check.' });
     return;
   }
-  onEvent({ type: 'prompt', text: opts.prompt?.trim() || DETERMINISTIC_PROMPT });
-
   let tools: McpTool[];
   try {
     const list = opts.listToolsImpl ?? listTools;
     tools = await list(instanceBaseUrl, token, { fetchImpl });
   } catch (e) {
-    onEvent({ type: 'error', message: `Demo couldn't query your n8n MCP server — ${errorMessage(e)}.` });
+    onEvent({ type: 'error', message: `Couldn't query your n8n MCP server — ${errorMessage(e)}.` });
     return;
-  }
-
-  const representative = pickRepresentativeTool(tools);
-  if (representative) {
-    onEvent({ type: 'tool', name: representative });
-    onEvent({ type: 'tool-done', name: representative });
   }
   if (tools.length === 0) {
     onEvent({ type: 'result', text: 'Connected to the n8n MCP server, but it reported no tools yet.' });
@@ -78,11 +137,6 @@ async function runDeterministicDemo(opts: RunDemoOptions): Promise<void> {
   });
 }
 
-function pickRepresentativeTool(tools: McpTool[]): string | undefined {
-  const preferred = tools.find((t) => /(^|[._-])(list|search|get)([._-]|$)/i.test(t.name));
-  return (preferred ?? tools[0])?.name;
-}
-
 async function runNoneDemo(opts: RunDemoOptions): Promise<void> {
   opts.onEvent({
     type: 'result',
@@ -93,3 +147,5 @@ async function runNoneDemo(opts: RunDemoOptions): Promise<void> {
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
+
+export { DETERMINISTIC_PROMPT };

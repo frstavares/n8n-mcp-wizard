@@ -238,6 +238,9 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   const [introTyped, setIntroTyped] = useState(false);
   const [promptsTyped, setPromptsTyped] = useState(false);
   const [events, setEvents] = useState<DemoEvent[]>([]);
+  // Live text buffer for the agent's currently-streaming reply (committed on flush).
+  const liveRef = useRef('');
+  const [live, setLive] = useState('');
   const [oauthUrl, setOauthUrl] = useState('');
   const [lines, setLines] = useState<ReactNode[]>([]);
   const [error, setError] = useState<WizardError | null>(null);
@@ -308,11 +311,11 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
           openBrowser: (u) => import('open').then((m) => m.default(u)),
         });
         if (off) return;
+        // OAuth mode is token-less in the written configs: an OAuth access token
+        // expires and can't be refreshed from a static header, so each tool runs
+        // its own (refresh-capable) n8n sign-in on first connect. We keep the token
+        // only in-memory, to drive the live demo this session.
         setDemoToken(res.accessToken);
-        // Write the token we just obtained into each tool's config as a Bearer
-        // header, so the tools reuse THIS sign-in instead of each running their own
-        // n8n OAuth (a second browser right after this one).
-        setWriteKey(res.accessToken);
         setAuthMode('oauth');
         addLine(<Text key="o"><Text color={GREEN}>✓</Text> Authorized in browser</Text>);
         setTimeout(() => !off && goto('detecting'), 600);
@@ -355,19 +358,27 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   useEffect(() => {
     if (stage !== 'configuring' || !checked) return;
     let off = false;
+    // After writing configs, offer the live demo ONLY if Claude Code is installed
+    // (the demo drives the user's own Claude). Otherwise skip straight to Done.
+    const advance = async () => {
+      const prov = await resolveProvider(demoToken).catch(() => ({ kind: 'none' }) as DemoProvider);
+      if (off) return;
+      setProvider(prov);
+      goto(demo && prov.kind === 'agent-sdk' ? 'demoSelect' : 'done');
+    };
     (async () => {
       try {
         if (detected.length === 0) {
           // The manual config snippet is shown on the Done screen — don't duplicate it here.
           addLine(<Text key="nc" color="yellow">No supported AI client detected — I'll show the manual setup at the end.</Text>);
-          setTimeout(() => !off && goto(demo ? 'demoSelect' : 'done'), 1500);
+          setTimeout(() => !off && advance(), 1500);
           return;
         }
         const res = await configureClients(detected, { mcpUrl: checked.mcpUrl, apiKey: writeKey });
         if (off) return;
         setResults(res);
         res.forEach((r) => addLine(resultLine(r)));
-        setTimeout(() => !off && goto(demo ? 'demoSelect' : 'done'), 1100);
+        setTimeout(() => !off && advance(), 1100);
       } catch (e) {
         if (!off) fail(e);
       }
@@ -377,48 +388,59 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
     };
   }, [stage, checked, detected]);
 
-  // 4 — pick demo provider + adaptive prompts
+  // 4 — adaptive sample prompts (provider was resolved in the configure step)
   useEffect(() => {
     if (stage !== 'demoSelect' || !checked) return;
     let off = false;
     (async () => {
-      const [base, prompts] = await Promise.all([
-        resolveProvider(demoToken).catch(() => ({ kind: 'none' }) as DemoProvider),
-        suggestPrompts(checked.url, demoToken).catch(() => []),
-      ]);
-      if (off) return;
-      setProvider(base);
-      setSuggestions(prompts);
+      const prompts = await suggestPrompts(checked.url, demoToken).catch(() => []);
+      if (!off) setSuggestions(prompts);
     })();
     return () => {
       off = true;
     };
   }, [stage, checked, demoToken]);
 
-  // 4 — run a demo turn (first message, or a follow-up in the chat)
+  // 4 — run the demo turn (drive the user's Claude, stream the reply)
   useEffect(() => {
     if (stage !== 'demoRunning' || !checked) return;
     let off = false;
-    setEvents([]); // the chat header is rendered separately
+    setEvents([]);
+    liveRef.current = '';
+    setLive('');
+    const commitLive = () => {
+      const t = liveRef.current.trim();
+      if (t) setEvents((ev) => [...ev, { type: 'text', text: t }]);
+      liveRef.current = '';
+      setLive('');
+    };
     const handle = (e: DemoEvent) => {
-      if (!off) setEvents((ev) => [...ev, e]);
+      if (off) return;
+      if (e.type === 'delta') {
+        if (e.kind === 'text') {
+          liveRef.current += e.text;
+          setLive(liveRef.current);
+        }
+        return; // thinking deltas are dropped — keep the demo output clean
+      }
+      if (e.type === 'flush') {
+        commitLive();
+        return;
+      }
+      commitLive(); // any concrete event ends the current streaming block
+      setEvents((ev) => [...ev, e]);
     };
 
     (async () => {
       try {
-        await runDemo({
-          provider,
-          instanceBaseUrl: checked.url,
-          token: demoToken,
-          prompt: demoPrompt,
-          onEvent: handle,
-        });
+        await runDemo({ provider, instanceBaseUrl: checked.url, token: demoToken, prompt: demoPrompt, onEvent: handle });
       } catch {
-        if (!off) setEvents((prev) => [...prev, { type: 'error', message: 'That check could not run, but your tools are configured.' }]);
+        if (!off) setEvents((prev) => [...prev, { type: 'error', message: 'That run could not finish, but your tools are configured.' }]);
       } finally {
         if (off) return;
-        // Let the result land, then move to Done (a clean layout repaint).
-        setTimeout(() => !off && setStage('done'), 1400);
+        commitLive();
+        // Let the answer land, then move to Done (a clean layout repaint).
+        setTimeout(() => !off && setStage('done'), 1600);
       }
     })();
     return () => {
@@ -441,12 +463,13 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
 
   function buildDoneSummary(): string {
     const ok = results.filter(isConfigured);
+    const oauth = authMode === 'oauth';
     const out = [`  ${c.green("🎉 You're connected.")}`];
     if (ok.length) {
-      // A credential (API key, or the OAuth token from this session) is written into
-      // every config, so tools work immediately — no per-tool sign-in.
-      out.push('', `  Ready to use — just start chatting in:`);
-      for (const r of ok) out.push(`  ${c.pink('•')} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, true))}`);
+      // API key is written into every config (works immediately). OAuth mode is
+      // token-less, so each tool runs its own n8n sign-in the first time you open it.
+      out.push('', `  ${oauth ? 'Sign in to n8n the first time you open each tool:' : 'Ready to use — just start chatting in:'}`);
+      for (const r of ok) out.push(`  ${c.pink('•')} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, !oauth))}`);
     } else if (checked) {
       const snippet = manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey });
       out.push('', `  ${c.yellow('No AI client detected — add the n8n MCP server manually:')}`, c.dim(snippet.split('\n').map((l) => '  ' + l).join('\n')));
@@ -614,10 +637,11 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
             {introTyped ? (
               <Box marginTop={1} flexDirection="column">
                 <Text color="white">Want to see it live against your instance?</Text>
+                <Text color="gray">Runs on your own Claude Code (your login &amp; usage) — it'll ask n8n to sign in.</Text>
                 <Box marginTop={1}>
                   <SelectList
                     options={[
-                      { label: 'Run a live demo', value: 'run', recommended: true, description: "I'll send a real prompt to your n8n" },
+                      { label: 'Run a live demo', value: 'run', recommended: true, description: 'Claude answers a real prompt using your n8n tools' },
                       { label: "Skip — I'm all set", value: 'skip', description: 'jump straight to the finish' },
                     ]}
                     onSelect={(v) => goto(v === 'run' ? 'demoPrompts' : 'done')}
@@ -652,17 +676,17 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
           </Box>
         );
       case 'demoRunning': {
-        // Rendered inside the normal layout (one banner, clean repaint to Done) —
-        // no <Static>, since this is a short one-shot check, not a token stream.
+        // Rendered inside the normal layout (one banner, clean repaint to Done).
         const finished = events.some((e) => e.type === 'result' || e.type === 'error');
         return (
           <Box flexDirection="column">
             {events.map((e, i) => (
               <Box key={i}>{eventLine(e)}</Box>
             ))}
+            {live.trim() ? <Box>{eventLine({ type: 'text', text: live })}</Box> : null}
             {!finished ? (
               <Box marginTop={1}>
-                <Spinner label="Checking your connection…" />
+                <Spinner label="Claude is working in your n8n…" />
               </Box>
             ) : null}
           </Box>
@@ -670,17 +694,20 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
       }
       case 'done': {
         const ok = results.filter(isConfigured);
+        const oauth = authMode === 'oauth';
         return (
           <Box flexDirection="column">
             <Text color={GREEN}>🎉 You're connected.</Text>
             {ok.length ? (
               <Box marginTop={1} flexDirection="column">
-                <Text color="white">Ready to use — just start chatting in:</Text>
+                <Text color="white">
+                  {oauth ? 'Sign in to n8n the first time you open each tool:' : 'Ready to use — just start chatting in:'}
+                </Text>
                 {ok.map((r) => (
                   <Text key={r.id}>
                     <Text color={PINK}>• </Text>
                     <Text color="white">{r.label}</Text>
-                    <Text color="gray"> — {clientUsage(r.id, true)}</Text>
+                    <Text color="gray"> — {clientUsage(r.id, !oauth)}</Text>
                   </Text>
                 ))}
               </Box>

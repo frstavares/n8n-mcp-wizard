@@ -9,17 +9,21 @@ function listToolsReturning(tools: McpTool[]) {
 }
 
 describe('resolveProvider', () => {
-  it('uses the deterministic demo when a token is present', async () => {
-    expect(await resolveProvider('tok')).toEqual({ kind: 'deterministic' });
+  it('drives the agent when Claude Code is installed and a token is present', async () => {
+    expect(await resolveProvider('tok', async () => true)).toEqual({ kind: 'agent-sdk' });
+  });
+
+  it('skips the demo (none) when Claude Code is not installed', async () => {
+    expect(await resolveProvider('tok', async () => false)).toEqual({ kind: 'none' });
   });
 
   it('returns none when there is no token', async () => {
-    expect(await resolveProvider()).toEqual({ kind: 'none' });
+    expect(await resolveProvider(undefined, async () => true)).toEqual({ kind: 'none' });
   });
 });
 
-describe('runDemo (deterministic)', () => {
-  it('emits prompt, a representative tool call, and a result summary', async () => {
+describe('runDemo (deterministic fallback)', () => {
+  it('echoes the chosen prompt and summarizes the connected tools', async () => {
     const tools: McpTool[] = [
       { name: 'n8n_create_workflow' },
       { name: 'n8n_list_workflows' },
@@ -37,16 +41,11 @@ describe('runDemo (deterministic)', () => {
 
     const types = events.map((e) => e.type);
     expect(types).toContain('prompt');
-    expect(types).toContain('tool');
-    expect(types).toContain('tool-done');
+    expect(types).toContain('result');
 
-    // The demo echoes the prompt the user actually picked, not a canned one.
+    // Echoes the prompt the user actually picked, not a canned one.
     const promptEvent = events.find((e) => e.type === 'prompt') as Extract<DemoEvent, { type: 'prompt' }>;
     expect(promptEvent.text).toBe('List my workflows and tell me what they do');
-
-    // Picks a read/list/search tool as representative, not the create one.
-    const toolEvent = events.find((e) => e.type === 'tool') as Extract<DemoEvent, { type: 'tool' }>;
-    expect(['n8n_list_workflows', 'n8n_search_nodes']).toContain(toolEvent.name);
 
     const result = events.find((e) => e.type === 'result') as Extract<DemoEvent, { type: 'result' }>;
     expect(result.text).toContain('3 tools available');
