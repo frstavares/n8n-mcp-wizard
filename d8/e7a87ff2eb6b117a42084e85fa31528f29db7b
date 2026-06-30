@@ -1,0 +1,31 @@
+src/ui/app.tsx
+  s_10154009c3b2f1::t_954a1a8b49f276 326
+  s_10154009c3b2f1::t_e4021b5f894820 343-344
+src/lib/demo/resolver.ts
+  s_10154009c3b2f1::t_1149ec580ff902 2-4,8,17
+src/lib/demo/run.ts
+  s_10154009c3b2f1::t_bf9b4dea395333 2,4-8,10,12,40-41,50-52,54-56,58-59,61-80,83-88,95-96,105-108,111-117,133,178
+  s_10154009c3b2f1::t_9d945d9faf1474 60
+package.json
+  s_10154009c3b2f1::t_e0094761519cab 35
+src/lib/demo/index.ts
+  s_10154009c3b2f1::t_b3a613d2e6ebcd 11
+test/demo.test.ts
+  s_10154009c3b2f1::t_18d61b2dd312bc 2,7,18-20,23,28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d8e7a87ff2eb6b117a42084e85fa31528f29db7b",
+  "prompts": {},
+  "sessions": {
+    "s_10154009c3b2f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ce5eadc-732a-41fc-9d55-99174270bdb0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "frstavares <filipe.tavares@n8n.io>"
+    }
+  }
+}
