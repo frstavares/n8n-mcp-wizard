@@ -10,6 +10,7 @@ import {
   detectClients,
   getClient,
   manualSnippet,
+  serverKeyForInstance,
   type ClientDef,
   type ClientId,
   type ClientWriteResult,
@@ -67,6 +68,74 @@ export function SelectList({ options, onSelect }: { options: SelOption[]; onSele
   );
 }
 
+interface TypeLine {
+  text: string;
+  color?: string;
+  dim?: boolean;
+}
+
+/**
+ * Types out a block of lines like a person at a keyboard: each line reveals
+ * character-by-character, then the next begins. Any keypress skips to the full
+ * text. Fires onDone exactly once when everything is shown.
+ */
+export function TypewriterLines({
+  lines,
+  speed = 12,
+  linePause = 110,
+  onDone,
+}: {
+  lines: TypeLine[];
+  speed?: number;
+  linePause?: number;
+  onDone?: () => void;
+}) {
+  const [li, setLi] = useState(0);
+  const [ci, setCi] = useState(0);
+  const [skip, setSkip] = useState(false);
+  const firedDone = useRef(false);
+  const done = skip || li >= lines.length;
+
+  useInput(() => setSkip(true), { isActive: !done });
+
+  useEffect(() => {
+    if (done) return;
+    const cur = lines[li];
+    if (!cur) return;
+    if (ci < cur.text.length) {
+      const t = setTimeout(() => setCi((c) => c + 1), speed);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => {
+      setLi((l) => l + 1);
+      setCi(0);
+    }, linePause);
+    return () => clearTimeout(t);
+  }, [li, ci, done, speed, linePause]);
+
+  useEffect(() => {
+    if (done && !firedDone.current) {
+      firedDone.current = true;
+      onDone?.();
+    }
+    // onDone intentionally omitted: firedDone guards against a double-fire.
+  }, [done]);
+
+  return (
+    <Box flexDirection="column">
+      {lines.map((l, idx) => {
+        if (idx > li && !skip) return null; // not reached yet — pops in when its turn comes
+        const shown = skip || idx < li ? l.text : l.text.slice(0, ci);
+        return (
+          <Text key={idx} color={l.color} dimColor={l.dim}>
+            {shown}
+          </Text>
+        );
+      })}
+    </Box>
+  );
+}
+
 const STEPS = ['Connect', 'Authorize', 'Clients', 'Build', 'Done'] as const;
 const BANNER = `         ___
  _ __   ( _ )  _ __
@@ -85,6 +154,7 @@ type Stage =
   | 'selectClients'
   | 'configuring'
   | 'demoSelect'
+  | 'demoPrompts'
   | 'demoRunning'
   | 'demoFollowup'
   | 'done'
@@ -101,6 +171,7 @@ const STEP_OF: Record<Stage, number> = {
   selectClients: 2,
   configuring: 2,
   demoSelect: 3,
+  demoPrompts: 3,
   demoRunning: 3,
   demoFollowup: 3,
   done: 4,
@@ -118,6 +189,7 @@ const EYEBROW: Partial<Record<Stage, string>> = {
   selectClients: 'STEP 3 / 5 · CLIENTS',
   configuring: 'STEP 3 / 5 · CLIENTS',
   demoSelect: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
+  demoPrompts: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
   demoRunning: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
   demoFollowup: 'STEP 4 / 5 · YOUR FIRST AUTOMATION',
   done: 'ALL SET',
@@ -148,9 +220,11 @@ interface AppProps {
   demo: boolean;
   /** summary is printed to the normal buffer after the alt-screen is torn down. */
   onExit: (code: number, summary: string) => void;
+  /** Wipe the terminal (incl. committed <Static> output) for a fresh full repaint. */
+  clearScreen?: () => void;
 }
 
-export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps) {
+export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit, clearScreen }: AppProps) {
   const { exit } = useApp();
 
   const [stage, setStage] = useState<Stage>(initialUrl ? 'connecting' : 'askUrl');
@@ -166,6 +240,10 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   const [provider, setProvider] = useState<DemoProvider>({ kind: 'none' });
   const [demoPrompt, setDemoPrompt] = useState('');
   const [continueSession, setContinueSession] = useState(false);
+  // Gate the post-typewriter UI: the "Run a live demo?" choice and the prompt picker
+  // only appear once their typed-out intro has finished.
+  const [introTyped, setIntroTyped] = useState(false);
+  const [promptsTyped, setPromptsTyped] = useState(false);
   const [events, setEvents] = useState<DemoEvent[]>([]);
   // Live token buffer for the currently-streaming block (kept out of <Static>).
   const liveRef = useRef<{ kind: 'text' | 'thinking'; text: string } | null>(null);
@@ -183,6 +261,12 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
     setLines([]);
     setStage(s);
   };
+
+  // Replay the typewriter each time we (re-)enter an intro stage.
+  useEffect(() => {
+    if (stage === 'demoSelect') setIntroTyped(false);
+    if (stage === 'demoPrompts') setPromptsTyped(false);
+  }, [stage]);
 
   // 1 — connect
   useEffect(() => {
@@ -281,11 +365,11 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
       try {
         if (detected.length === 0) {
           addLine(<Text key="nc" color="yellow">No supported AI client detected.</Text>);
-          addLine(<Text key="man" color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: 'n8n' })}</Text>);
+          addLine(<Text key="man" color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: serverKeyForInstance(checked.url) })}</Text>);
           setTimeout(() => !off && goto(demo ? 'demoSelect' : 'done'), 1500);
           return;
         }
-        const res = await configureClients(detected, { mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: 'n8n' });
+        const res = await configureClients(detected, { mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: serverKeyForInstance(checked.url) });
         if (off) return;
         setResults(res);
         res.forEach((r) => addLine(resultLine(r)));
@@ -382,7 +466,12 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
         if (off) return;
         // Conversational only when we're driving the agent; otherwise wrap up.
         if (provider.kind === 'agent-sdk') setStage('demoFollowup');
-        else setTimeout(() => !off && setStage('done'), 1200);
+        else
+          setTimeout(() => {
+            if (off) return;
+            clearScreen?.(); // wipe the chat transcript before the Done screen
+            setStage('done');
+          }, 1200);
       }
     })();
     return () => {
@@ -394,7 +483,10 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   // chat follow-up — you decide when to finish (esc), or keep the conversation going
   useInput(
     (_input, key) => {
-      if (stage === 'demoFollowup' && key.escape) setStage('done');
+      if (stage === 'demoFollowup' && key.escape) {
+        clearScreen?.(); // wipe the chat transcript so Done isn't appended below it
+        setStage('done');
+      }
     },
     { isActive: stage === 'demoFollowup' },
   );
@@ -420,7 +512,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
       out.push('', `  ${oauth ? 'Sign in to n8n the first time you open each tool:' : 'Ready to use — just start chatting in:'}`);
       for (const r of ok) out.push(`  ${c.pink('•')} ${c.white(r.label)} ${c.dim('— ' + clientUsage(r.id, true))}`);
     } else if (checked) {
-      const snippet = manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: 'n8n' });
+      const snippet = manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: serverKeyForInstance(checked.url) });
       out.push('', `  ${c.yellow('No AI client detected — add the n8n MCP server manually:')}`, c.dim(snippet.split('\n').map((l) => '  ' + l).join('\n')));
     }
     out.push('', `  ${c.dim('Docs:')} https://docs.n8n.io/mcp`);
@@ -471,27 +563,38 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
         </Box>
       )),
     ];
+    const running = stage === 'demoRunning';
     return (
       <Box flexDirection="column">
         <Static items={items}>{(item) => item}</Static>
+        {/* Working state sits at the TOP of the live region — directly under the
+            user's prompt and above the streaming response — so activity shows up
+            right where the answer will appear, not glued to the input. */}
+        {running ? (
+          <Box paddingX={2} marginTop={1}>
+            <Spinner label="Working…" />
+          </Box>
+        ) : null}
         {live && live.text.trim() ? (
           <Box paddingX={2}>{eventLine(live.kind === 'thinking' ? { type: 'thinking', text: live.text } : { type: 'text', text: live.text })}</Box>
         ) : null}
-        {stage === 'demoFollowup' ? (
-          <Box paddingX={2} marginTop={1}>
-            <Text color={BLUE} bold>❯ </Text>
-            <TextInput
-              placeholder="Reply, or press esc to finish"
-              onSubmit={(v) => {
-                const msg = v.trim();
-                if (!msg) return;
-                setContinueSession(true);
-                setDemoPrompt(msg);
-                setStage('demoRunning');
-              }}
-            />
-          </Box>
-        ) : null}
+        {/* Input is always mounted and pinned at the bottom (claude-code style). It's
+            only disabled while a turn runs, so the layout never jumps and the reply
+            box stays in one place the whole session. */}
+        <Box paddingX={2} marginTop={1}>
+          <Text color={running ? 'gray' : BLUE} bold>❯ </Text>
+          <TextInput
+            isDisabled={running}
+            placeholder={running ? 'Working… reply when this finishes' : 'Reply, or press esc to finish'}
+            onSubmit={(v) => {
+              const msg = v.trim();
+              if (!msg) return;
+              setContinueSession(true);
+              setDemoPrompt(msg);
+              setStage('demoRunning');
+            }}
+          />
+        </Box>
         {hint() ? (
           <Box paddingX={2}>
             <Text color="gray">{hint()}</Text>
@@ -632,49 +735,57 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
         );
       }
       case 'demoSelect':
-        if (!suggestions.length) return <Spinner label="Setting up your first message…" />;
+        // "What your AI tools can do" — typed out, then an opt-in to a live demo.
         return (
           <Box flexDirection="column">
-            <Text color="white">With n8n MCP, your AI tools can:</Text>
-            <Box marginTop={1} flexDirection="column">
-              <Text color="gray">• Build workflows from a plain-English description</Text>
-              <Text color="gray">• Run &amp; inspect executions</Text>
-              <Text color="gray">• Find &amp; fix errors in your workflows</Text>
-              <Text color="gray">• List &amp; manage what you already have</Text>
-            </Box>
-            <Box marginTop={1}>
-              <Text color="white">Try one now, against your instance:</Text>
-            </Box>
-            <Box marginTop={1}>
-              <SelectList
-                options={suggestions.map((p) => ({ label: p.text, value: p.text }))}
-                onSelect={(v) => {
-                  setContinueSession(false);
-                  setDemoPrompt(v);
-                  setStage('demoRunning');
-                }}
-              />
-            </Box>
+            <TypewriterLines
+              lines={[
+                { text: 'With n8n MCP, your AI tools can:', color: 'white' },
+                { text: '  • Build workflows from a plain-English description', color: 'gray' },
+                { text: '  • Run & inspect executions', color: 'gray' },
+                { text: '  • Find & fix errors in your workflows', color: 'gray' },
+                { text: '  • List & manage what you already have', color: 'gray' },
+              ]}
+              onDone={() => setIntroTyped(true)}
+            />
+            {introTyped ? (
+              <Box marginTop={1} flexDirection="column">
+                <Text color="white">Want to see it live against your instance?</Text>
+                <Box marginTop={1}>
+                  <SelectList
+                    options={[
+                      { label: 'Run a live demo', value: 'run', recommended: true, description: "I'll send a real prompt to your n8n" },
+                      { label: "Skip — I'm all set", value: 'skip', description: 'jump straight to the finish' },
+                    ]}
+                    onSelect={(v) => goto(v === 'run' ? 'demoPrompts' : 'done')}
+                  />
+                </Box>
+              </Box>
+            ) : null}
           </Box>
         );
-      case 'demoRunning':
-        return <Box flexDirection="column">{events.map((e, i) => <Box key={i}>{eventLine(e)}</Box>)}</Box>;
-      case 'demoFollowup':
+      case 'demoPrompts':
+        if (!suggestions.length) return <Spinner label="Tailoring prompts for your instance…" />;
+        // Type the sample prompts out, then turn them into a pickable list.
         return (
           <Box flexDirection="column">
-            <Box flexDirection="column">{events.map((e, i) => <Box key={i}>{eventLine(e)}</Box>)}</Box>
+            <Text color="white">Try one now, against your instance:</Text>
             <Box marginTop={1}>
-              <Text color={BLUE}>› </Text>
-              <TextInput
-                placeholder="Reply, or press esc to finish"
-                onSubmit={(v) => {
-                  const msg = v.trim();
-                  if (!msg) return;
-                  setContinueSession(true);
-                  setDemoPrompt(msg);
-                  setStage('demoRunning');
-                }}
-              />
+              {promptsTyped ? (
+                <SelectList
+                  options={suggestions.map((p) => ({ label: p.text, value: p.text }))}
+                  onSelect={(v) => {
+                    setContinueSession(false);
+                    setDemoPrompt(v);
+                    setStage('demoRunning');
+                  }}
+                />
+              ) : (
+                <TypewriterLines
+                  lines={suggestions.map((p) => ({ text: '  ' + p.text, color: 'gray' }))}
+                  onDone={() => setPromptsTyped(true)}
+                />
+              )}
             </Box>
           </Box>
         );
@@ -700,7 +811,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
             ) : checked ? (
               <Box marginTop={1} flexDirection="column">
                 <Text color="yellow">No AI client detected — add the n8n MCP server manually:</Text>
-                <Text color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: 'n8n' })}</Text>
+                <Text color="gray">{manualSnippet({ mcpUrl: checked.mcpUrl, apiKey: writeKey, serverKey: serverKeyForInstance(checked.url) })}</Text>
               </Box>
             ) : null}
             <Box marginTop={1}>
@@ -732,7 +843,9 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
       case 'selectClients':
         return '↑↓ move · space toggle · enter confirm';
       case 'demoSelect':
-        return '↑↓ move · enter run';
+        return introTyped ? '↑↓ move · enter select' : 'press any key to skip the intro';
+      case 'demoPrompts':
+        return promptsTyped ? '↑↓ move · enter run' : 'press any key to skip the intro';
       case 'demoRunning':
         return ''; // the spinner already says "Working…"
       case 'demoFollowup':
@@ -806,15 +919,22 @@ export async function runInk(props: Omit<AppProps, 'onExit'>): Promise<number> {
   out.write('\x1b[?1049h\x1b[H');
   process.once('exit', restore);
   try {
-    const { waitUntilExit } = render(
+    // The chat view commits its transcript via <Static> (permanent output). When we
+    // leave it for the Done screen, that transcript would linger; instance.clear()
+    // wipes the screen and resets Ink's frame so the next render is a clean repaint.
+    const screen = { clear: () => {} };
+    const instance = render(
       <App
         {...props}
+        clearScreen={() => screen.clear()}
         onExit={(c, s) => {
           code = c;
           summary = s;
         }}
       />,
     );
+    screen.clear = () => instance.clear();
+    const { waitUntilExit } = instance;
     await waitUntilExit();
   } finally {
     restore();

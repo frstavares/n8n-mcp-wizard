@@ -10,6 +10,7 @@ import {
   getClient,
   manualSnippet,
   removeFromClients,
+  serverKeyForInstance,
   type ClientDef,
   type ClientId,
   type ClientWriteResult,
@@ -139,11 +140,11 @@ async function runNonInteractive(urlArg: string | undefined, opts: Options) {
     line();
     line(`  ${c.yellow('No supported AI client detected.')}`);
     line(`  ${c.dim('Add this MCP server manually:')}`);
-    line(indent(manualSnippet({ mcpUrl, apiKey: writeKey, serverKey: 'n8n' })));
+    line(indent(manualSnippet({ mcpUrl, apiKey: writeKey, serverKey: serverKeyForInstance(url) })));
   } else {
     line();
     line(`  ${c.dim(`Configuring ${targets.length} client${targets.length > 1 ? 's' : ''}…`)}`);
-    const results = await configureClients(targets, { mcpUrl, apiKey: writeKey, serverKey: 'n8n' });
+    const results = await configureClients(targets, { mcpUrl, apiKey: writeKey, serverKey: serverKeyForInstance(url) });
     reportResults(results);
     // already-configured (re-run) counts as connected, not "no client".
     okClients = results.filter((r) => r.ok || r.error === 'already-exists');

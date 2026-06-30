@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { zedConfigPath } from './paths.js';
-import { removeJson, upsertJson } from './jsonc-file.js';
+import { removeServerEntries, upsertJson } from './jsonc-file.js';
 import { httpServerConfig } from './server-config.js';
 import { DEFAULT_SERVER_KEY, type ClientDef, type ClientWriteResult } from './types.js';
 
@@ -43,10 +43,10 @@ export const zed: ClientDef = {
   },
 
   async remove(serverKey): Promise<ClientWriteResult> {
-    const key = serverKey ?? DEFAULT_SERVER_KEY;
     try {
-      const { removed } = await removeJson(zedConfigPath(), ['context_servers', key]);
-      return { id: 'zed', label: 'Zed', ok: removed, detail: removed ? 'removed (restart Zed)' : 'not configured' };
+      const removed = await removeServerEntries(zedConfigPath(), ['context_servers'], serverKey);
+      const ok = removed.length > 0;
+      return { id: 'zed', label: 'Zed', ok, detail: ok ? 'removed (restart Zed)' : 'not configured' };
     } catch (e) {
       return { id: 'zed', label: 'Zed', ok: false, error: e instanceof Error ? e.message : String(e) };
     }

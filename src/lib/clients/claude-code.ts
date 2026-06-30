@@ -10,6 +10,22 @@ function claudeArgs(ctx: WriteContext): string[] {
   return args;
 }
 
+/** Names of n8n* MCP servers in Claude Code (best-effort parse of `claude mcp list`). */
+async function listClaudeN8nServers(): Promise<string[]> {
+  try {
+    const { stdout } = await execa('claude', ['mcp', 'list']);
+    const names = new Set<string>();
+    for (const line of stdout.split('\n')) {
+      // Each server prints as "<name>: <url> - <status>"; our keys are slugs (no spaces).
+      const m = line.match(/^\s*(n8n(?:-[a-z0-9-]+)?):\s+https?:\/\//i);
+      if (m?.[1]) names.add(m[1]);
+    }
+    return [...names];
+  } catch {
+    return [];
+  }
+}
+
 export const claudeCode: ClientDef = {
   id: 'claude-code',
   label: 'Claude Code',
@@ -41,16 +57,23 @@ export const claudeCode: ClientDef = {
   },
 
   async remove(serverKey): Promise<ClientWriteResult> {
-    const key = serverKey ?? DEFAULT_SERVER_KEY;
-    try {
-      await execa('claude', ['mcp', 'remove', '--scope', 'user', key]);
-      return { id: 'claude-code', label: 'Claude Code', ok: true, detail: 'removed' };
-    } catch (e: any) {
-      const notFound = /not found|no .*server|does not exist/i.test(typeof e?.stderr === 'string' ? e.stderr : '');
-      return notFound
-        ? { id: 'claude-code', label: 'Claude Code', ok: false, detail: 'not configured' }
-        : { id: 'claude-code', label: 'Claude Code', ok: false, error: e instanceof Error ? e.message : String(e) };
+    // Uninstall has no URL, so sweep every n8n* server claude knows about (plus
+    // the legacy default key as a fallback if listing fails).
+    const keys = serverKey ? [serverKey] : Array.from(new Set([DEFAULT_SERVER_KEY, ...(await listClaudeN8nServers())]));
+    let removed = false;
+    let lastError: unknown;
+    for (const key of keys) {
+      try {
+        await execa('claude', ['mcp', 'remove', '--scope', 'user', key]);
+        removed = true;
+      } catch (e: any) {
+        const notFound = /not found|no .*server|does not exist/i.test(typeof e?.stderr === 'string' ? e.stderr : '');
+        if (!notFound) lastError = e;
+      }
     }
+    if (removed) return { id: 'claude-code', label: 'Claude Code', ok: true, detail: 'removed' };
+    if (lastError) return { id: 'claude-code', label: 'Claude Code', ok: false, error: lastError instanceof Error ? lastError.message : String(lastError) };
+    return { id: 'claude-code', label: 'Claude Code', ok: false, detail: 'not configured' };
   },
 
   manualHint(ctx) {

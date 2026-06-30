@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser';
+import { isN8nServerKey } from './types.js';
 
 export interface UpsertResult {
   existed: boolean;
@@ -52,14 +53,32 @@ export async function upsertJson(
   return { existed, written: true };
 }
 
-/** Remove a key at a JSON(C) path, preserving the rest. No-op if absent or file missing. */
-export async function removeJson(path: string, jsonPath: (string | number)[]): Promise<{ removed: boolean }> {
+/**
+ * Remove n8n server entries from a JSON(C) config. With an explicit `serverKey`,
+ * removes just that one; without, sweeps every n8n* key under `parentPath` (so
+ * `npx @n8n/mcp remove` cleans up per-instance keys it can't otherwise name).
+ * Returns the keys actually removed. Preserves comments/formatting.
+ */
+export async function removeServerEntries(
+  path: string,
+  parentPath: (string | number)[],
+  serverKey?: string,
+): Promise<string[]> {
   const text = await readTextOrEmpty(path);
-  if (!text.trim()) return { removed: false };
+  if (!text.trim()) return [];
   const errors: ParseError[] = [];
   const parsed = parse(text, errors, { allowTrailingComma: true }) ?? {};
-  if (getAtPath(parsed, jsonPath) === undefined) return { removed: false };
-  const edits = modify(text, jsonPath, undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } });
-  await writeFile(path, applyEdits(text, edits), 'utf8');
-  return { removed: true };
+  const parent = getAtPath(parsed, parentPath);
+  if (parent == null || typeof parent !== 'object') return [];
+  const keys = serverKey
+    ? Object.keys(parent as Record<string, unknown>).filter((k) => k === serverKey)
+    : Object.keys(parent as Record<string, unknown>).filter(isN8nServerKey);
+  if (!keys.length) return [];
+  let next = text;
+  for (const k of keys) {
+    const edits = modify(next, [...parentPath, k], undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } });
+    next = applyEdits(next, edits);
+  }
+  await writeFile(path, next, 'utf8');
+  return keys;
 }

@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { vscodeConfigPath } from './paths.js';
-import { removeJson, upsertJson } from './jsonc-file.js';
+import { removeServerEntries, upsertJson } from './jsonc-file.js';
 import { vscodeServerConfig } from './server-config.js';
 import { DEFAULT_SERVER_KEY, type ClientDef, type ClientWriteResult } from './types.js';
 
@@ -43,10 +43,10 @@ export const vscode: ClientDef = {
   },
 
   async remove(serverKey): Promise<ClientWriteResult> {
-    const key = serverKey ?? DEFAULT_SERVER_KEY;
     try {
-      const { removed } = await removeJson(vscodeConfigPath(), ['servers', key]);
-      return { id: 'vscode', label: 'VS Code', ok: removed, detail: removed ? 'removed' : 'not configured' };
+      const removed = await removeServerEntries(vscodeConfigPath(), ['servers'], serverKey);
+      const ok = removed.length > 0;
+      return { id: 'vscode', label: 'VS Code', ok, detail: ok ? 'removed' : 'not configured' };
     } catch (e) {
       return { id: 'vscode', label: 'VS Code', ok: false, error: e instanceof Error ? e.message : String(e) };
     }

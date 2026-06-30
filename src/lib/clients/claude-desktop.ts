@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { claudeDesktopConfigPath } from './paths.js';
-import { removeJson, upsertJson } from './jsonc-file.js';
+import { removeServerEntries, upsertJson } from './jsonc-file.js';
 import { mcpRemoteConfig } from './server-config.js';
 import { DEFAULT_SERVER_KEY, type ClientDef, type ClientWriteResult } from './types.js';
 
@@ -55,10 +55,10 @@ export const claudeDesktop: ClientDef = {
   },
 
   async remove(serverKey): Promise<ClientWriteResult> {
-    const key = serverKey ?? DEFAULT_SERVER_KEY;
     try {
-      const { removed } = await removeJson(claudeDesktopConfigPath(), ['mcpServers', key]);
-      return { id: 'claude-desktop', label: 'Claude Desktop', ok: removed, detail: removed ? 'removed (restart Claude Desktop)' : 'not configured' };
+      const removed = await removeServerEntries(claudeDesktopConfigPath(), ['mcpServers'], serverKey);
+      const ok = removed.length > 0;
+      return { id: 'claude-desktop', label: 'Claude Desktop', ok, detail: ok ? 'removed (restart Claude Desktop)' : 'not configured' };
     } catch (e) {
       return { id: 'claude-desktop', label: 'Claude Desktop', ok: false, error: e instanceof Error ? e.message : String(e) };
     }
