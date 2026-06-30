@@ -1,0 +1,70 @@
+src/lib/clients/claude-desktop.ts
+  s_8e2411d05aa826::t_5286638cf374bc 4
+  s_8e2411d05aa826::t_88ecd468e9239a 59-61
+src/lib/clients/claude-code.ts
+  s_8e2411d05aa826::t_15168aa710c890 60-72,74-76
+  s_8e2411d05aa826::t_ad9f3ff746b7eb 21
+  s_8e2411d05aa826::t_be9349bb08375d 13-20,22-28
+src/ui/app.tsx
+  s_8e2411d05aa826::t_313d05be6e7e9f 738,741-764,767-769,772,774-788
+  s_8e2411d05aa826::t_f314f03efb4ad3 368,372,515,814
+  s_8e2411d05aa826::t_7c6dd3d05f7431 223-224,227
+  s_8e2411d05aa826::t_06acabc415806c 71-138
+  s_8e2411d05aa826::t_0980739e306dbd 174
+  s_8e2411d05aa826::t_8bd50cfc83e13f 922-926,929,936-937
+  s_8e2411d05aa826::t_d7280a09806b86 157
+  s_8e2411d05aa826::t_02f0284b72eb1f 469-474
+  s_8e2411d05aa826::t_baf92245ec3ccc 486-489
+  s_8e2411d05aa826::t_d4d16dd1a775e4 192
+  s_8e2411d05aa826::t_13705fe08cdaf8 13
+  s_8e2411d05aa826::t_fe067323878bc7 846-848
+  s_8e2411d05aa826::t_8dadba07ac9152 265-270
+  s_8e2411d05aa826::t_17ab456823b969 243-246
+  s_8e2411d05aa826::t_d7ac21aca68471 566,570-573,575,578-597
+src/lib/clients/jsonc-file.ts
+  s_8e2411d05aa826::t_67cf7c4e58a892 4
+  s_8e2411d05aa826::t_d873b9ad2094d3 56-66,68,71-83
+src/lib/clients/cursor.ts
+  s_8e2411d05aa826::t_044009eca46f71 47-49
+  s_8e2411d05aa826::t_4a2c5cfd8b0c43 4
+src/lib/clients/codex.ts
+  s_8e2411d05aa826::t_6c27d7fb08e972 56-68,70-72
+  s_8e2411d05aa826::t_b9f0ce60c19a53 3,14-25
+src/cli.tsx
+  s_8e2411d05aa826::t_0e545e058ded35 13
+  s_8e2411d05aa826::t_268baa8ce34819 143,147
+src/lib/clients/types.ts
+  s_8e2411d05aa826::t_44749113ea984e 65
+  s_8e2411d05aa826::t_1a37987dab0ca7 39-64,66-70
+test/server-key.test.ts
+  s_8e2411d05aa826::t_991a8513671216 1-51
+test/ui.test.tsx
+  s_8e2411d05aa826::t_191c97c1ac0a14 5,8
+  s_8e2411d05aa826::t_458651e6a7a187 40-62,64,68-72
+  s_8e2411d05aa826::t_f6970e103cfd73 63,65-67
+src/lib/clients/vscode.ts
+  s_8e2411d05aa826::t_3d6a261c303ca7 4
+  s_8e2411d05aa826::t_fdd3fa8f64a360 47-49
+src/lib/clients/zed.ts
+  s_8e2411d05aa826::t_eb7d4e82912ee2 4
+  s_8e2411d05aa826::t_216b543c99cf31 47-49
+test/jsonc-file.test.ts
+  s_8e2411d05aa826::t_f141b80b033d97 5
+  s_8e2411d05aa826::t_98d217a44be909 108-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "21bcfc4e31a15835fd2fcd0cef78abad2ee9573f",
+  "prompts": {},
+  "sessions": {
+    "s_8e2411d05aa826": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "06c0618c-100e-4e3a-9d95-857be67ec177",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "frstavares <filipe.tavares@n8n.io>"
+    }
+  }
+}
