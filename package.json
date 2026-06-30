@@ -1,0 +1,52 @@
+{
+  "name": "n8n-mcp",
+  "version": "0.1.0",
+  "description": "Connect your n8n instance to your AI tools in one command. npx @n8n/mcp",
+  "type": "module",
+  "bin": {
+    "n8n-mcp": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "n8n",
+    "mcp",
+    "model-context-protocol",
+    "cli",
+    "wizard",
+    "ai"
+  ],
+  "author": "frstavares",
+  "license": "MIT",
+  "dependencies": {
+    "@inkjs/ui": "^2.0.0",
+    "cli-markdown": "^3.4.0",
+    "commander": "^12.1.0",
+    "execa": "^9.5.1",
+    "ink": "^5.1.0",
+    "jsonc-parser": "^3.3.1",
+    "open": "^10.1.0",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "ink-testing-library": "^4.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}
