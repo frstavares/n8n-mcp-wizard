@@ -12,6 +12,7 @@ import { listTools } from '../mcp-client.js';
 import { mcpServerUrl } from '../instance.js';
 import { prettyToolName, summarizeInput, summarizeResult, errorMessage } from './format.js';
 import { runDeterministicDemo, runNoneDemo } from './fallback.js';
+import { runCodexDemo } from './codex.js';
 import type { DemoProvider } from './resolver.js';
 
 export type DemoEvent =
@@ -43,7 +44,7 @@ export interface RunDemoOptions {
 export async function runDemo(opts: RunDemoOptions): Promise<void> {
   switch (opts.provider.kind) {
     case 'agent-sdk':
-      return runAgentSdkDemo(opts);
+      return opts.provider.agent === 'codex' ? runCodexDemo(opts) : runClaudeDemo(opts);
     case 'deterministic':
       return runDeterministicDemo(opts);
     case 'none':
@@ -52,7 +53,7 @@ export async function runDemo(opts: RunDemoOptions): Promise<void> {
 }
 
 /** Drive the user's local Claude Code against their n8n MCP server, streaming the reply. */
-async function runAgentSdkDemo(opts: RunDemoOptions): Promise<void> {
+async function runClaudeDemo(opts: RunDemoOptions): Promise<void> {
   const { instanceBaseUrl, token, prompt, onEvent } = opts;
   onEvent({ type: 'prompt', text: prompt });
 
