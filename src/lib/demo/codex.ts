@@ -1,13 +1,17 @@
 /**
  * Drives the user's local Codex CLI against their n8n MCP server, streaming the reply.
  *
- * Model B: Codex can't complete its own MCP OAuth headlessly (a token-less server just
- * fails with "not logged in"), so we inject the wizard's token as a bearer via an env
- * var and add the n8n server through `-c mcp_servers.*` overrides. Runs against the
- * user's real ~/.codex (their model login). On any failure we fall back to the
- * deterministic connection check.
+ * Model B: Codex can't complete its own MCP OAuth headlessly, so we inject the wizard's
+ * token as a bearer. Crucially, Codex has no `strictMcpConfig` equivalent — a plain
+ * `codex exec` loads EVERY server in the user's ~/.codex/config.toml and blocks on their
+ * startup, so an unrelated slow/broken server stalls the whole run (the demo shows
+ * nothing). We isolate the run in a throwaway CODEX_HOME containing ONLY our n8n server
+ * (plus the user's copied login), matching how the Claude path isolates via strictMcpConfig.
+ * On any failure we fall back to the deterministic connection check.
  */
 import os from 'node:os';
+import { copyFile, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { execa } from 'execa';
 import { mcpServerUrl } from '../instance.js';
 import { prettyToolName, summarizeInput, summarizeResult, errorMessage } from './format.js';
@@ -18,31 +22,48 @@ import type { ThreadEvent } from './codex-events.js';
 /** Env var the injected token is exposed under (referenced by `bearer_token_env_var`). */
 const TOKEN_ENV = 'N8N_MCP_TOKEN';
 
-/** Remember the session across turns so chat follow-ups continue the same conversation. */
+/** Overall safety net: a stalled MCP handshake should fall back, never hang forever. */
+const RUN_TIMEOUT_MS = 180_000;
+
+/** Isolated Codex home + last session id, reused across turns so follow-ups resume. */
+let codexHome: string | null = null;
 let lastThreadId: string | null = null;
+
+/**
+ * Create (once) a throwaway CODEX_HOME that contains ONLY our n8n server and a copy of
+ * the user's login, so the run ignores every other server in their real config.
+ */
+async function ensureCodexHome(instanceBaseUrl: string): Promise<string> {
+  if (codexHome) return codexHome;
+  const home = await mkdtemp(join(os.tmpdir(), 'n8n-codex-'));
+  // Best-effort: copy the file-based ChatGPT/API login so model calls work in isolation.
+  // (Keyring logins are global and found without copying; if neither exists the run fails
+  // fast and we fall back.)
+  await copyFile(join(os.homedir(), '.codex', 'auth.json'), join(home, 'auth.json')).catch(() => undefined);
+  const url = mcpServerUrl(instanceBaseUrl);
+  const config = `[mcp_servers.n8n]\nurl = "${url.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"\nbearer_token_env_var = "${TOKEN_ENV}"\n`;
+  await writeFile(join(home, 'config.toml'), config, 'utf8');
+  codexHome = home;
+  return home;
+}
 
 export async function runCodexDemo(opts: RunDemoOptions): Promise<void> {
   const { instanceBaseUrl, token, prompt, onEvent } = opts;
   onEvent({ type: 'prompt', text: prompt });
-
-  // Shared, read-only, git-agnostic run: inject only our authenticated n8n server.
-  const common = [
-    '--json',
-    '--sandbox', 'read-only',
-    '--skip-git-repo-check',
-    '--cd', os.tmpdir(),
-    '-c', `mcp_servers.n8n.url="${mcpServerUrl(instanceBaseUrl)}"`,
-    '-c', `mcp_servers.n8n.bearer_token_env_var="${TOKEN_ENV}"`,
-  ];
-  const args =
-    opts.continueSession && lastThreadId
-      ? ['exec', 'resume', ...common, lastThreadId, prompt]
-      : ['exec', ...common, prompt];
-
   try {
+    const home = await ensureCodexHome(instanceBaseUrl);
+    const common = ['--json', '--sandbox', 'read-only', '--skip-git-repo-check', '--cd', os.tmpdir()];
+    const args =
+      opts.continueSession && lastThreadId
+        ? ['exec', 'resume', ...common, lastThreadId, prompt]
+        : ['exec', ...common, prompt];
+
     const map = createCodexMapper();
-    // execa merges `env` over process.env, so the child keeps the user's codex login.
-    const subprocess = execa('codex', args, { env: { [TOKEN_ENV]: token ?? '' }, reject: false });
+    const subprocess = execa('codex', args, {
+      env: { CODEX_HOME: home, [TOKEN_ENV]: token ?? '' },
+      reject: false,
+      timeout: RUN_TIMEOUT_MS,
+    });
     for await (const line of subprocess.iterable({ from: 'stdout' })) {
       const trimmed = line.trim();
       if (!trimmed) continue;
