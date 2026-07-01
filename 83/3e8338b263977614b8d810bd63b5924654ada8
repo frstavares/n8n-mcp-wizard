@@ -1,0 +1,22 @@
+test/demo.test.ts
+  s_eb9b4d6ed9d93d::t_351f5ac6ecd0ba 2
+  s_eb9b4d6ed9d93d::t_711c920e8f18f5 11-25,27-28,31
+src/lib/demo/resolver.ts
+  s_eb9b4d6ed9d93d::t_7314f359fda9ac 4-5,7,11,13-35,37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "833e8338b263977614b8d810bd63b5924654ada8",
+  "prompts": {},
+  "sessions": {
+    "s_eb9b4d6ed9d93d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ca50b233-4eb1-45ca-8b4e-0407bc5e0d01",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "frstavares <filipe.tavares@n8n.io>"
+    }
+  }
+}
