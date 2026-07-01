@@ -48,3 +48,9 @@ export function claudeDesktopConfigPath(): string {
     linux: join(XDG, 'Claude', 'claude_desktop_config.json'),
   });
 }
+
+/** Codex — $CODEX_HOME/config.toml, default ~/.codex/config.toml (same on every OS). */
+export function codexConfigPath(): string {
+  const codexHome = process.env.CODEX_HOME ?? join(home, '.codex');
+  return join(codexHome, 'config.toml');
+}

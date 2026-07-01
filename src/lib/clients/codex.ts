@@ -1,14 +1,43 @@
 import { execa } from 'execa';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { commandExists } from '../util/command.js';
+import { codexConfigPath } from './paths.js';
 import { DEFAULT_SERVER_KEY, isN8nServerKey, type ClientDef, type ClientWriteResult, type WriteContext } from './types.js';
 
-// NOTE: Codex CLI MCP flags are modeled on the PostHog wizard's usage and need a
-// real-terminal check; manualHint is the safe fallback if a flag differs.
-function codexArgs(ctx: WriteContext): string[] {
-  const key = ctx.serverKey ?? DEFAULT_SERVER_KEY;
-  const args = ['mcp', 'add', key, '--url', ctx.mcpUrl];
-  if (ctx.apiKey) args.push('--bearer-token', ctx.apiKey);
-  return args;
+// Codex has no `codex mcp add` flag for a STATIC bearer token — only
+// `--bearer-token-env-var` (a runtime env-var reference) and OAuth. To match how every
+// other client embeds the wizard's key, we edit ~/.codex/config.toml directly and write
+// the token as an `http_headers` entry. The edit is surgical (only our block changes),
+// so comments and other servers in the user's config are preserved.
+
+function escapeToml(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/** Matches our `[mcp_servers.<key>]` block (and any `.subtables`) up to the next section. */
+function blockRegex(key: string): RegExp {
+  const k = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|\\n)\\[mcp_servers\\.${k}(?:\\.[^\\]\\n]+)?\\][^\\n]*(?:\\n(?![ \\t]*\\[)[^\\n]*)*`, 'g');
+}
+
+/** True if the config text already declares an `[mcp_servers.<key>]` block. */
+export function hasCodexServer(existing: string, key: string): boolean {
+  const k = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^[ \\t]*\\[mcp_servers\\.${k}(?:\\.[^\\]\\n]+)?\\]`, 'm').test(existing);
+}
+
+/**
+ * Return `existing` config.toml text with the n8n server block upserted. API-key mode
+ * embeds a static bearer via `http_headers`; OAuth mode writes the URL only (Codex signs
+ * in on first use). Only our block is replaced — the rest of the file is untouched.
+ */
+export function upsertCodexServer(existing: string, key: string, url: string, apiKey?: string): string {
+  const cleaned = existing.replace(blockRegex(key), '').replace(/\n{3,}/g, '\n\n').trimEnd();
+  const lines = [`[mcp_servers.${key}]`, `url = "${escapeToml(url)}"`];
+  if (apiKey) lines.push(`http_headers = { Authorization = "${escapeToml(`Bearer ${apiKey}`)}" }`);
+  const block = lines.join('\n');
+  return cleaned ? `${cleaned}\n\n${block}\n` : `${block}\n`;
 }
 
 /** Names of n8n* MCP servers configured in Codex (`codex mcp list --json` → [{name}]). */
@@ -35,20 +64,22 @@ export const codex: ClientDef = {
 
   async write(ctx, opts): Promise<ClientWriteResult> {
     const key = ctx.serverKey ?? DEFAULT_SERVER_KEY;
+    const path = codexConfigPath();
     try {
-      if (opts?.overwrite) await execa('codex', ['mcp', 'remove', key]).catch(() => undefined);
-      await execa('codex', codexArgs(ctx));
-      return { id: 'codex', label: 'Codex', ok: true, pathKind: 'cli-managed', detail: 'codex mcp add' };
-    } catch (e: any) {
-      const stderr = typeof e?.stderr === 'string' ? e.stderr : '';
-      const exists = /already exists/i.test(stderr);
-      return {
-        id: 'codex',
-        label: 'Codex',
-        ok: false,
-        error: exists ? 'already-exists' : e instanceof Error ? e.message : String(e),
-        manual: this.manualHint(ctx),
-      };
+      let existing = '';
+      try {
+        existing = await readFile(path, 'utf8');
+      } catch {
+        /* no config yet — start fresh */
+      }
+      if (!opts?.overwrite && hasCodexServer(existing, key)) {
+        return { id: 'codex', label: 'Codex', ok: false, error: 'already-exists', manual: this.manualHint(ctx) };
+      }
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, upsertCodexServer(existing, key, ctx.mcpUrl, ctx.apiKey), 'utf8');
+      return { id: 'codex', label: 'Codex', ok: true, pathKind: 'user', detail: '~/.codex/config.toml' };
+    } catch (e) {
+      return { id: 'codex', label: 'Codex', ok: false, error: e instanceof Error ? e.message : String(e), manual: this.manualHint(ctx) };
     }
   },
 
@@ -73,6 +104,11 @@ export const codex: ClientDef = {
   },
 
   manualHint(ctx) {
-    return `Run:\n  codex ${codexArgs(ctx).join(' ')}`;
+    const key = ctx.serverKey ?? DEFAULT_SERVER_KEY;
+    if (ctx.apiKey) {
+      const block = [`[mcp_servers.${key}]`, `url = "${ctx.mcpUrl}"`, 'http_headers = { Authorization = "Bearer <your-api-key>" }'].join('\n  ');
+      return `Add to ~/.codex/config.toml:\n  ${block}`;
+    }
+    return `Run:\n  codex mcp add ${key} --url ${ctx.mcpUrl}`;
   },
 };
