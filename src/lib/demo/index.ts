@@ -19,16 +19,16 @@ export type { DemoEvent, RunDemoOptions } from './run.js';
  * demo is useful from an empty state.
  */
 export const SAMPLE_PROMPTS: { id: string; text: string }[] = [
-  { id: 'capabilities', text: 'What can I do with my n8n through MCP?' },
-  { id: 'build-simple', text: 'Implement a simple workflow to get me started.' },
-  { id: 'help-create', text: 'Help me create a workflow for my use case.' },
+  { id: 'build-scheduled', text: 'Build my first workflow: every morning, post a summary to Slack.' },
+  { id: 'suggest-build', text: 'Suggest 3 workflows I could automate, then build the best one.' },
+  { id: 'build-webhook', text: 'Create a workflow that receives a webhook and saves it to Google Sheets.' },
 ];
 
-/** Prompts for users who already have workflows — discover / list / build. */
+/** Prompts for users who already have workflows — understand / fix / extend. */
 export const EXISTING_PROMPTS: { id: string; text: string }[] = [
-  { id: 'capabilities', text: 'What can I do with my n8n through MCP?' },
-  { id: 'list-summarize', text: 'List my workflows and summarize what each one does.' },
-  { id: 'build-simple', text: 'Implement a simple new workflow for me.' },
+  { id: 'understand', text: 'List my workflows and explain what each one does.' },
+  { id: 'fix', text: 'Check my recent executions for failures and suggest fixes.' },
+  { id: 'extend', text: 'Build a new workflow that complements the ones I already have.' },
 ];
 
 /**

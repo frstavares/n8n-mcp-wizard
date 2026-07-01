@@ -15,8 +15,8 @@ import type { DemoProvider } from './resolver.js';
 export type DemoEvent =
   | { type: 'header'; agent: string; host: string } // chat header (seeded by the UI)
   | { type: 'prompt'; text: string }
-  | { type: 'tool'; name: string }
-  | { type: 'tool-done'; name: string }
+  | { type: 'tool'; name: string; input?: string } // input = compact args summary
+  | { type: 'tool-done'; name: string; output?: string } // output = result snippet
   | { type: 'thinking'; text: string } // rendered dim
   | { type: 'text'; text: string } // rendered bright
   | { type: 'delta'; kind: 'text' | 'thinking'; text: string } // live token stream (UI buffers it)
@@ -54,7 +54,6 @@ async function runAgentSdkDemo(opts: RunDemoOptions): Promise<void> {
   const { instanceBaseUrl, token, prompt, onEvent } = opts;
   onEvent({ type: 'prompt', text: prompt });
 
-  const openTools: string[] = [];
   let streamed = false;
   try {
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
@@ -69,27 +68,48 @@ async function runAgentSdkDemo(opts: RunDemoOptions): Promise<void> {
           },
         },
         allowedTools: ['mcp__n8n'], // pre-approve the n8n tools so the demo doesn't prompt
+        // Use ONLY this header-authed server (the OAuth token we already hold).
+        // Without this, the spawned Claude also loads the user's ~/.claude.json n8n
+        // server (token-less) and runs its own n8n OAuth — the sign-in we don't want.
+        strictMcpConfig: true,
         includePartialMessages: true,
         ...(opts.continueSession ? { continue: true } : {}),
       },
     });
 
+    const toolNames = new Map<string, string>(); // tool_use_id → pretty name (for results)
+    let curTool: { id: string; name: string; input: string } | null = null;
     for await (const msg of response as AsyncIterable<any>) {
       if (msg.type === 'stream_event') {
         const ev = msg.event;
-        if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use' && typeof ev.content_block.name === 'string') {
-          openTools.push(ev.content_block.name);
-          onEvent({ type: 'tool', name: prettyToolName(ev.content_block.name) });
+        if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use') {
+          curTool = { id: ev.content_block.id, name: prettyToolName(ev.content_block.name ?? 'tool'), input: '' };
         } else if (ev?.type === 'content_block_delta') {
           const d = ev.delta;
           if (d?.type === 'text_delta' && typeof d.text === 'string') {
             onEvent({ type: 'delta', kind: 'text', text: d.text });
             streamed = true;
+          } else if (d?.type === 'input_json_delta' && curTool && typeof d.partial_json === 'string') {
+            curTool.input += d.partial_json; // tool args stream in as partial JSON
           }
         } else if (ev?.type === 'content_block_stop') {
-          const name = openTools.shift();
-          if (name) onEvent({ type: 'tool-done', name: prettyToolName(name) });
-          else onEvent({ type: 'flush' });
+          if (curTool) {
+            toolNames.set(curTool.id, curTool.name);
+            onEvent({ type: 'tool', name: curTool.name, input: summarizeInput(curTool.input) });
+            curTool = null;
+          } else {
+            onEvent({ type: 'flush' }); // end of a streamed text block
+          }
+        }
+      } else if (msg.type === 'user') {
+        // Tool results arrive as user messages — surface a snippet of the output.
+        const content = msg.message?.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block?.type === 'tool_result') {
+              onEvent({ type: 'tool-done', name: toolNames.get(block.tool_use_id) ?? 'tool', output: summarizeResult(block.content) });
+            }
+          }
         }
       } else if (msg.type === 'result') {
         if (!streamed && msg.subtype === 'success' && typeof msg.result === 'string' && msg.result.trim()) {
@@ -107,6 +127,37 @@ async function runAgentSdkDemo(opts: RunDemoOptions): Promise<void> {
 /** Pretty-print an MCP tool id: `mcp__n8n__search_workflows` → `search_workflows`. */
 function prettyToolName(name: string): string {
   return name.replace(/^mcp__[^_]+__/, '');
+}
+
+/** One-line summary of a tool's JSON args, e.g. `{"query":"errors"}` → `query: "errors"`. */
+function summarizeInput(json: string): string | undefined {
+  const raw = json.trim();
+  if (!raw) return undefined;
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      const s = Object.entries(obj)
+        .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+        .join(', ');
+      return truncate(s, 72);
+    }
+    return truncate(JSON.stringify(obj), 72);
+  } catch {
+    return truncate(raw, 72);
+  }
+}
+
+/** Snippet of a tool result (string, or an array of text blocks), collapsed + truncated. */
+function summarizeResult(content: unknown): string | undefined {
+  let text = '';
+  if (typeof content === 'string') text = content;
+  else if (Array.isArray(content)) text = content.map((c: any) => (typeof c?.text === 'string' ? c.text : '')).join(' ');
+  text = text.replace(/\s+/g, ' ').trim();
+  return text ? truncate(text, 100) : undefined;
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
 const DETERMINISTIC_PROMPT = 'What can you do with my n8n instance?';

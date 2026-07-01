@@ -459,11 +459,14 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
             <Spinner label="Claude is working in your n8n…" />
           </Box>
         ) : null}
-        {stage === 'demoFollowup' ? (
+        {!onDone ? (
+          // Input is always mounted at the bottom (claude-code style) — just disabled
+          // while Claude works, so the box never jumps and stays where you expect it.
           <Box paddingX={2} marginTop={1}>
-            <Text color={BLUE} bold>❯ </Text>
+            <Text color={running ? 'gray' : BLUE} bold>❯ </Text>
             <TextInput
-              placeholder="Reply to keep going, or press esc to finish"
+              isDisabled={running}
+              placeholder={running ? 'Working… reply when Claude finishes' : 'Reply to keep going, or press esc to finish'}
               onSubmit={(v) => {
                 const msg = v.trim();
                 if (!msg) return;
@@ -760,9 +763,20 @@ function eventLine(e: DemoEvent): ReactNode {
         </Box>
       );
     case 'tool':
-      return <Text><Text color="gray">↳</Text> <Text color={PURPLE}>{e.name}</Text></Text>;
+      return (
+        <Text>
+          <Text color="gray">↳</Text> <Text color={PURPLE}>{e.name}</Text>
+          {e.input ? <Text color="gray" dimColor>{`(${e.input})`}</Text> : null}
+        </Text>
+      );
     case 'tool-done':
-      return <Text><Text color="gray">↳</Text> <Text color={PURPLE}>{e.name}</Text> <Text color={GREEN}>✓</Text></Text>;
+      return (
+        <Text>
+          {'  '}
+          <Text color="gray">⎿ </Text>
+          <Text color="gray" dimColor>{e.output ?? 'done'}</Text>
+        </Text>
+      );
     case 'thinking':
       return <Text color="gray" dimColor>{stripMarkdown(e.text)}</Text>;
     case 'text':
