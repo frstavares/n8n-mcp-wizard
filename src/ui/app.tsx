@@ -172,7 +172,6 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   const [provider, setProvider] = useState<DemoProvider>({ kind: 'none' });
   const [agents, setAgents] = useState<DemoAgent[]>([]); // agents available to drive the demo
   const [demoPrompt, setDemoPrompt] = useState('');
-  const [typingPrompt, setTypingPrompt] = useState(false); // demoPrompts: "write my own" mode
   const [events, setEvents] = useState<DemoEvent[]>([]);
   const [continueSession, setContinueSession] = useState(false); // follow-up turn in the chat
   // Live text buffer for the agent's currently-streaming reply (committed on flush).
@@ -692,40 +691,23 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
           </Box>
         );
       }
-      case 'demoPrompts': {
+      case 'demoPrompts':
         if (!suggestions.length) return <Spinner label="Tailoring prompts for your instance…" />;
-        const start = (msg: string) => {
-          const text = msg.trim();
-          if (!text) return;
-          setContinueSession(false); // first turn of the chat
-          setDemoPrompt(text);
-          setStage('demoRunning');
-        };
-        if (typingPrompt) {
-          return (
-            <Box flexDirection="column">
-              <Text color="white">Type a prompt for your instance:</Text>
-              <Box marginTop={1} paddingX={1}>
-                <TextInput placeholder="e.g. Build a workflow that posts a daily summary to Slack" onSubmit={start} />
-              </Box>
-            </Box>
-          );
-        }
         return (
           <Box flexDirection="column">
             <Text color="white">Try one now, against your instance:</Text>
             <Box marginTop={1}>
               <SelectList
-                options={[
-                  ...suggestions.map((p) => ({ label: p.text, value: p.text })),
-                  { label: '✎ Write my own prompt…', value: '__write_own__', description: 'type your own' },
-                ]}
-                onSelect={(v) => (v === '__write_own__' ? setTypingPrompt(true) : start(v))}
+                options={suggestions.map((p) => ({ label: p.text, value: p.text }))}
+                onSelect={(v) => {
+                  setContinueSession(false); // first turn of the chat
+                  setDemoPrompt(v);
+                  setStage('demoRunning');
+                }}
               />
             </Box>
           </Box>
         );
-      }
       // demoRunning / demoFollowup / done are handled by the chat-view early return.
       case 'error':
         return (
@@ -752,7 +734,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
       case 'demoSelect':
         return '↑↓ move · enter select';
       case 'demoPrompts':
-        return typingPrompt ? 'type your prompt · enter' : '↑↓ move · enter run';
+        return '↑↓ move · enter run';
       case 'demoRunning':
         return ''; // the spinner already says the agent is working…
       case 'demoFollowup':
