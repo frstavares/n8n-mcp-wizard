@@ -15,7 +15,7 @@ import {
   type ClientWriteResult,
 } from '../lib/clients/index.js';
 import { authorize } from '../lib/auth/oauth.js';
-import { resolveProvider, runDemo, suggestPrompts, type DemoEvent, type DemoProvider } from '../lib/demo/index.js';
+import { availableAgents, runDemo, suggestPrompts, type DemoAgent, type DemoEvent, type DemoProvider } from '../lib/demo/index.js';
 import { c, symbols } from '../lib/util/colors.js';
 import { stripMarkdown } from '../lib/util/markdown.js';
 
@@ -26,6 +26,9 @@ const PURPLE = '#C3A6FF';
 
 // Reserved body height so short steps don't collapse the layout.
 const BODY_MIN_HEIGHT = 10;
+
+/** Display names for the demo agents. */
+const AGENT_LABELS: Record<DemoAgent, string> = { claude: 'Claude', codex: 'Codex' };
 
 interface SelOption {
   label: string;
@@ -167,6 +170,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   const [results, setResults] = useState<ClientWriteResult[]>([]);
   const [suggestions, setSuggestions] = useState<{ id: string; text: string }[]>([]);
   const [provider, setProvider] = useState<DemoProvider>({ kind: 'none' });
+  const [agents, setAgents] = useState<DemoAgent[]>([]); // agents available to drive the demo
   const [demoPrompt, setDemoPrompt] = useState('');
   const [events, setEvents] = useState<DemoEvent[]>([]);
   const [continueSession, setContinueSession] = useState(false); // follow-up turn in the chat
@@ -284,13 +288,14 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   useEffect(() => {
     if (stage !== 'configuring' || !checked) return;
     let off = false;
-    // After writing configs, offer the live demo ONLY if Claude Code is installed
-    // (the demo drives the user's own Claude). Otherwise skip straight to Done.
+    // After writing configs, offer the live demo ONLY if an agent (Claude Code or
+    // Codex) is installed — it drives the user's own agent. Otherwise skip to Done.
     const advance = async () => {
-      const prov = await resolveProvider(demoToken).catch(() => ({ kind: 'none' }) as DemoProvider);
+      const ags = await availableAgents(demoToken).catch(() => [] as DemoAgent[]);
       if (off) return;
-      setProvider(prov);
-      goto(demo && prov.kind === 'agent-sdk' ? 'demoSelect' : 'done');
+      setAgents(ags);
+      if (ags[0]) setProvider({ kind: 'agent-sdk', agent: ags[0] });
+      goto(demo && ags.length ? 'demoSelect' : 'done');
     };
     (async () => {
       try {
@@ -327,7 +332,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
     };
   }, [stage, checked, demoToken]);
 
-  // 4 — run the demo turn (drive the user's Claude, stream the reply)
+  // 4 — run the demo turn (drive the user's agent, stream the reply)
   useEffect(() => {
     if (stage !== 'demoRunning' || !checked) return;
     let off = false;
@@ -453,12 +458,12 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
         {live.trim() ? <Box paddingX={2}>{eventLine({ type: 'text', text: live })}</Box> : null}
         {running ? (
           <Box paddingX={2} marginTop={1}>
-            <Spinner label="Claude is working in your n8n…" />
+            <Spinner label={`${AGENT_LABELS[provider.kind === 'agent-sdk' ? provider.agent : 'claude']} is working in your n8n…`} />
           </Box>
         ) : null}
         {!onDone ? (
           // Input is always mounted at the bottom (claude-code style) — just disabled
-          // while Claude works, so the box never jumps and stays where you expect it.
+          // while the agent works, so the box never jumps and stays where you expect it.
           <Box paddingX={2} marginTop={1}>
             <Text color={running ? 'gray' : BLUE} bold>❯ </Text>
             <TextInput
@@ -641,7 +646,23 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
           </Box>
         );
       }
-      case 'demoSelect':
+      case 'demoSelect': {
+        const single = agents.length <= 1;
+        const only: DemoAgent = agents[0] ?? 'claude';
+        const runOptions: SelOption[] = single
+          ? [
+              { label: 'Run a live demo', value: `run:${only}`, recommended: true, description: `${AGENT_LABELS[only]} answers a real prompt using your n8n tools` },
+              { label: "Skip — I'm all set", value: 'skip', description: 'jump straight to the finish' },
+            ]
+          : [
+              ...agents.map((a, idx) => ({
+                label: `Run with ${AGENT_LABELS[a]}`,
+                value: `run:${a}`,
+                recommended: idx === 0,
+                description: `${AGENT_LABELS[a]} answers a real prompt using your n8n tools`,
+              })),
+              { label: "Skip — I'm all set", value: 'skip', description: 'jump straight to the finish' },
+            ];
         return (
           <Box flexDirection="column">
             <Text color="white">With n8n MCP, your AI tools can:</Text>
@@ -653,19 +674,23 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
             </Box>
             <Box marginTop={1} flexDirection="column">
               <Text color="white">Want to see it live against your instance?</Text>
-              <Text color="gray">Runs on your own Claude Code (your login &amp; usage) — it'll ask n8n to sign in.</Text>
+              <Text color="gray">
+                Runs on your own {single ? AGENT_LABELS[only] : 'AI tools'} (your login &amp; usage) — it'll ask n8n to sign in.
+              </Text>
               <Box marginTop={1}>
                 <SelectList
-                  options={[
-                    { label: 'Run a live demo', value: 'run', recommended: true, description: 'Claude answers a real prompt using your n8n tools' },
-                    { label: "Skip — I'm all set", value: 'skip', description: 'jump straight to the finish' },
-                  ]}
-                  onSelect={(v) => goto(v === 'run' ? 'demoPrompts' : 'done')}
+                  options={runOptions}
+                  onSelect={(v) => {
+                    if (v === 'skip') return goto('done');
+                    setProvider({ kind: 'agent-sdk', agent: v.slice('run:'.length) as DemoAgent });
+                    goto('demoPrompts');
+                  }}
                 />
               </Box>
             </Box>
           </Box>
         );
+      }
       case 'demoPrompts':
         if (!suggestions.length) return <Spinner label="Tailoring prompts for your instance…" />;
         return (
@@ -711,7 +736,7 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
       case 'demoPrompts':
         return '↑↓ move · enter run';
       case 'demoRunning':
-        return ''; // the spinner already says "Claude is working…"
+        return ''; // the spinner already says the agent is working…
       case 'demoFollowup':
         return 'reply to keep going · esc to finish';
       case 'done':
