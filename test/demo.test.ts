@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveProvider } from '../src/lib/demo/resolver.js';
+import { resolveProvider, availableAgents } from '../src/lib/demo/resolver.js';
 import { runDemo, type DemoEvent } from '../src/lib/demo/run.js';
 import type { McpTool } from '../src/lib/mcp-client.js';
 
@@ -8,12 +8,27 @@ function listToolsReturning(tools: McpTool[]) {
   return async () => tools;
 }
 
-describe('resolveProvider', () => {
-  it('drives the agent when Claude Code is installed and a token is present', async () => {
-    expect(await resolveProvider('tok', async () => true)).toEqual({ kind: 'agent-sdk' });
+describe('availableAgents', () => {
+  it('lists both agents when both CLIs are installed and a token is present', async () => {
+    expect(await availableAgents('tok', async () => true)).toEqual(['claude', 'codex']);
   });
 
-  it('skips the demo (none) when Claude Code is not installed', async () => {
+  it('lists only the installed agent', async () => {
+    const onlyCodex = async (bin: string) => bin === 'codex';
+    expect(await availableAgents('tok', onlyCodex)).toEqual(['codex']);
+  });
+
+  it('is empty without a token', async () => {
+    expect(await availableAgents(undefined, async () => true)).toEqual([]);
+  });
+});
+
+describe('resolveProvider', () => {
+  it('drives the first available agent when installed and a token is present', async () => {
+    expect(await resolveProvider('tok', async () => true)).toEqual({ kind: 'agent-sdk', agent: 'claude' });
+  });
+
+  it('skips the demo (none) when no agent is installed', async () => {
     expect(await resolveProvider('tok', async () => false)).toEqual({ kind: 'none' });
   });
 
