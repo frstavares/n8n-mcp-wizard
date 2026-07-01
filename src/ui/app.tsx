@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Box, Static, Text, render, useApp, useInput } from 'ink';
 import { Spinner, MultiSelect, TextInput } from '@inkjs/ui';
 import { toWizardError, type WizardError } from '../lib/errors.js';
@@ -421,11 +421,8 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
   const active = STEP_OF[stage];
   const showTracker = stage !== 'error'; // keep the tracker on the "ALL SET" / Done step too
 
-  // The live demo + its wrap-up are ONE persistent chat: the transcript lives in
-  // <Static> (committed once, never cleared), so the agent's reply and tool calls
-  // stay on screen. We hand back to the user after each turn (reply to continue, or
-  // esc to finish) and only render the "connected" wrap-up once they're done — never
-  // auto-advancing over the answer, and never a second screen to scroll between.
+  // Demo + wrap-up are one persistent chat: the transcript lives in <Static> (never
+  // cleared), and we advance to the wrap-up only when the user finishes.
   if (stage === 'demoRunning' || stage === 'demoFollowup' || stage === 'done') {
     const running = stage === 'demoRunning';
     const onDone = stage === 'done';
@@ -515,13 +512,8 @@ export function App({ initialUrl, apiKeyArg, clientIds, demo, onExit }: AppProps
     );
   }
 
-  // Compact, horizontally-centered layout. We deliberately do NOT fill the full
-  // terminal height — a full-height tree forces Ink to repaint the whole screen on
-  // every spinner tick, which flickers. Staying shorter than the terminal lets Ink
-  // diff in place (no flashing).
-  // Top-aligned (NOT full-height-centered): a full-height flex re-flows the whole
-  // screen on every spinner tick → flicker. Top-aligned keeps the tree compact so
-  // Ink only repaints what changed. The alt-screen still gives a clean full screen.
+  // Top-aligned, not full-height: a full-height tree makes Ink repaint the whole
+  // screen on every spinner tick (flicker); staying compact lets it diff in place.
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
       {/* Logo + step tracker: centered. */}
@@ -774,7 +766,7 @@ function eventLine(e: DemoEvent): ReactNode {
         <Text>
           {'  '}
           <Text color="gray">⎿ </Text>
-          <Text color="gray" dimColor>{e.output ?? 'done'}</Text>
+          <Text color={e.isError ? 'yellow' : 'gray'} dimColor={!e.isError}>{e.output ?? 'done'}</Text>
         </Text>
       );
     case 'thinking':

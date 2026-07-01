@@ -1,6 +1,5 @@
 import { execa } from 'execa';
 import { commandExists } from '../util/command.js';
-import { httpServerConfig } from './server-config.js';
 import { DEFAULT_SERVER_KEY, type ClientDef, type ClientWriteResult, type WriteContext } from './types.js';
 
 function claudeArgs(ctx: WriteContext): string[] {

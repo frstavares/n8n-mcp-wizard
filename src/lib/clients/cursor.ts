@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { cursorConfigPath } from './paths.js';
 import { removeServerEntries, upsertJson } from './jsonc-file.js';
 import { httpServerConfig } from './server-config.js';
-import { DEFAULT_SERVER_KEY, type ClientDef, type ClientWriteResult, type WriteContext } from './types.js';
+import { DEFAULT_SERVER_KEY, type ClientDef, type ClientWriteResult } from './types.js';
 
 export const cursor: ClientDef = {
   id: 'cursor',

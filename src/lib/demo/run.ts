@@ -16,7 +16,7 @@ export type DemoEvent =
   | { type: 'header'; agent: string; host: string } // chat header (seeded by the UI)
   | { type: 'prompt'; text: string }
   | { type: 'tool'; name: string; input?: string } // input = compact args summary
-  | { type: 'tool-done'; name: string; output?: string } // output = result snippet
+  | { type: 'tool-done'; name: string; output?: string; isError?: boolean } // output = human summary
   | { type: 'thinking'; text: string } // rendered dim
   | { type: 'text'; text: string } // rendered bright
   | { type: 'delta'; kind: 'text' | 'thinking'; text: string } // live token stream (UI buffers it)
@@ -107,7 +107,8 @@ async function runAgentSdkDemo(opts: RunDemoOptions): Promise<void> {
         if (Array.isArray(content)) {
           for (const block of content) {
             if (block?.type === 'tool_result') {
-              onEvent({ type: 'tool-done', name: toolNames.get(block.tool_use_id) ?? 'tool', output: summarizeResult(block.content) });
+              const isError = block.is_error === true;
+              onEvent({ type: 'tool-done', name: toolNames.get(block.tool_use_id) ?? 'tool', output: summarizeResult(block.content, isError), isError });
             }
           }
         }
@@ -147,13 +148,33 @@ function summarizeInput(json: string): string | undefined {
   }
 }
 
-/** Snippet of a tool result (string, or an array of text blocks), collapsed + truncated. */
-function summarizeResult(content: unknown): string | undefined {
-  let text = '';
-  if (typeof content === 'string') text = content;
-  else if (Array.isArray(content)) text = content.map((c: any) => (typeof c?.text === 'string' ? c.text : '')).join(' ');
-  text = text.replace(/\s+/g, ' ').trim();
-  return text ? truncate(text, 100) : undefined;
+/**
+ * Human, one-line summary of a tool result — never a raw JSON dump. Extracts a
+ * status/count when the payload is JSON, a short message on error, and collapses
+ * the oversized-output notice the runtime emits for huge results.
+ */
+function summarizeResult(content: unknown, isError: boolean): string {
+  const text = extractText(content).replace(/\s+/g, ' ').trim();
+  if (/exceeds?.*maximum|too large|output has been saved/i.test(text)) return 'large result';
+  if (isError) return `error${text ? `: ${truncate(text, 80)}` : ''}`;
+  if (!text) return 'done';
+  try {
+    const obj = JSON.parse(text);
+    const status = obj?.execution?.status ?? obj?.status;
+    if (typeof status === 'string') return status;
+    const list = Array.isArray(obj) ? obj : (obj?.workflows ?? obj?.data ?? obj?.results);
+    if (Array.isArray(list)) return `${list.length} result${list.length === 1 ? '' : 's'}`;
+    return 'done';
+  } catch {
+    return truncate(text, 72); // non-JSON: show a short snippet
+  }
+}
+
+/** Pull text out of a tool-result content payload (string or array of text blocks). */
+function extractText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map((c: any) => (typeof c?.text === 'string' ? c.text : '')).join(' ');
+  return '';
 }
 
 function truncate(s: string, n: number): string {
